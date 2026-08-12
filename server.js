@@ -1,1985 +1,2932 @@
-require("dotenv").config();
+const app = document.getElementById("app");
 
-const express = require("express");
-const cors = require("cors");
-const path = require("path");
-const crypto = require("crypto");
-const jwt = require("jsonwebtoken");
-const multer = require("multer");
-const XLSX = require("xlsx");
+/*
+=====================================================
+MIZAN
+Frontend: GitHub Pages / Railway
+AUTH MODE:
+- Token is MEMORY ONLY
+- No localStorage
+- No sessionStorage
+- Refresh = Login again
+- New tab = Login again
+=====================================================
+*/
 
-const { query, ensureDatabase } = require("./database");
-
-const app = express();
-
-const PORT = Number(process.env.PORT || 8080);
-
-const JWT_SECRET =
-  process.env.JWT_SECRET || "CHANGE_ME_IN_ENV";
-
-const FRONTEND_DIR = __dirname;
+const API_BASE =
+  "https://almizan-production.up.railway.app/api";
 
 
-/* =====================================================
-   MIDDLEWARE
-===================================================== */
+/*
+=====================================================
+MEMORY SESSION
+=====================================================
+مهم:
+لا تستخدم localStorage أو sessionStorage هنا.
 
-app.use(cors());
+المتغير ده بيعيش فقط طول الصفحة مفتوحة.
+عند Refresh أو فتح الموقع من جديد:
+tokenValue = ""
+وبالتالي المستخدم يرجع Login.
+=====================================================
+*/
 
-app.use(
-  express.json({
-    limit: "20mb"
-  })
-);
-
-app.use(
-  express.urlencoded({
-    extended: true,
-    limit: "20mb"
-  })
-);
+let tokenValue = "";
 
 
-/* =====================================================
-   EXCEL UPLOAD
-===================================================== */
+/*
+=====================================================
+TOKEN
+=====================================================
+*/
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-
-  limits: {
-    fileSize: 20 * 1024 * 1024
-  }
-});
-
-
-/* =====================================================
-   PASSWORD
-===================================================== */
-
-function hashPassword(password) {
-  return crypto
-    .createHash("sha256")
-    .update(String(password))
-    .digest("hex");
-}
-
-
-/* =====================================================
-   TEXT NORMALIZATION
-===================================================== */
-
-function normalizeText(value) {
-  let text = String(value ?? "");
-
-  text = text
-    .normalize("NFKC")
-    .toLowerCase()
-    .trim();
-
-  text = text.replace(
-    /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/g,
-    ""
-  );
-
-  text = text
-    .replace(/[أإآٱ]/g, "ا")
-    .replace(/ى/g, "ي")
-    .replace(/ة/g, "ه")
-    .replace(/ؤ/g, "و")
-    .replace(/ئ/g, "ي");
-
-  text = text.replace(/ـ/g, "");
-
-  text = text.replace(/\s+/g, " ");
-
-  return text.trim();
-}
-
-
-/* =====================================================
-   EXCEL HELPERS
-===================================================== */
-
-function normalizeKey(key) {
-  return normalizeText(key);
-}
-
-
-function normalizeRow(row) {
-  const out = {};
-
-  for (const [key, value] of Object.entries(row || {})) {
-    out[normalizeKey(key)] =
-      String(value ?? "").trim();
-  }
-
-  return out;
-}
-
-
-function pick(row, keys) {
-  for (const key of keys) {
-    const normalized = normalizeKey(key);
-
-    if (
-      Object.prototype.hasOwnProperty.call(
-        row,
-        normalized
-      )
-    ) {
-      const value =
-        String(row[normalized] ?? "").trim();
-
-      if (value !== "") {
-        return value;
-      }
-    }
-  }
-
-  return "";
+function token() {
+  return tokenValue;
 }
 
 
 /*
-   مهم:
-   في الاستيراد لا نستخدم anyValue
-   ولا نعمل skip لأي صف بسبب نقص البيانات.
+=====================================================
+CLEAR SESSION
+=====================================================
 */
 
+function clearSession() {
+  tokenValue = "";
 
-function caseFile(row) {
-  return pick(row, [
-    "رقم_الملف",
-    "رقم الملف",
-    "رقم الملف ",
-    "م",
-    "رقم",
-    "file_number",
-    "filenumber",
-    "file number",
-    "file no",
-    "file_no"
-  ]);
-}
-
-
-function client(row) {
-  return pick(row, [
-    "اسم_الموكل",
-    "اسم الموكل",
-    "اسم الموكل ",
-    "اسم العميل",
-    "اسم_العميل",
-    "client_name",
-    "clientname",
-    "client name",
-    "client"
-  ]);
-}
-
-
-function powerNumber(row) {
-  return pick(row, [
-    "رقم_التوكيل",
-    "رقم التوكيل",
-    "رقم التوكيل ",
-    "رقم الوكالة",
-    "رقم_الوكالة",
-    "power_number",
-    "powernumber",
-    "power number",
-    "power_no",
-    "power no",
-    "power"
-  ]);
-}
-
-
-function authority(row) {
-  return pick(row, [
-    "جهة_إصدار",
-    "جهة إصدار",
-    "جهة إصدار ",
-    "جهة_التوثيق",
-    "جهة التوثيق",
-    "جهة التوثيق ",
-    "جهه التوثيق",
-    "جهه_التوثيق",
-    "جهة التوثيق / الإصدار",
-    "جهة التوثيق/الإصدار",
-    "جهة التوثيق والاصدار",
-    "جهة التوثيق والاصدار ",
-    "التوثيق",
-    "جهة",
-    "authority",
-    "documentation_authority",
-    "documentation authority",
-    "documentation",
-    "issuing_authority",
-    "issuing authority"
-  ]);
-}
-
-
-/* =====================================================
-   AUTH
-===================================================== */
-
-function auth(req, res, next) {
-  const header =
-    req.headers.authorization || "";
-
-  if (!header.startsWith("Bearer ")) {
-    return res.status(401).json({
-      message: "يرجى تسجيل الدخول"
-    });
+  /*
+    تنظيف الـ hash فقط
+    بدون تخزين أي شيء في المتصفح.
+  */
+  try {
+    history.replaceState(
+      null,
+      "",
+      window.location.pathname +
+        window.location.search
+    );
+  } catch {
+    location.hash = "";
   }
+}
+
+
+/*
+=====================================================
+ESCAPE HTML
+=====================================================
+*/
+
+function esc(value) {
+
+  return String(value ?? "").replace(
+    /[&<>"']/g,
+    function (s) {
+
+      return {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;"
+      }[s];
+
+    }
+  );
+}
+
+
+/*
+=====================================================
+API REQUEST
+=====================================================
+*/
+
+async function api(url, options = {}) {
+
+  /*
+    أي API غير login يحتاج Token.
+  */
+
+  const headers = {
+    ...(options.headers || {})
+  };
+
+
+  /*
+    FormData لا نضع له Content-Type يدويًا.
+  */
+
+  if (
+    options.body instanceof FormData
+  ) {
+
+    if (token()) {
+
+      headers.Authorization =
+        "Bearer " + token();
+
+    }
+
+  } else {
+
+    headers["Content-Type"] =
+      "application/json";
+
+    if (token()) {
+
+      headers.Authorization =
+        "Bearer " + token();
+
+    }
+  }
+
+
+  const fullUrl =
+    API_BASE + url;
+
+
+  let response;
+
 
   try {
-    req.user = jwt.verify(
-      header.slice(7),
-      JWT_SECRET
+
+    response = await fetch(
+      fullUrl,
+      {
+        ...options,
+        headers,
+
+        /*
+          منع استخدام استجابة مخزنة
+          للطلبات الحساسة.
+        */
+        cache: "no-store"
+      }
     );
 
-    next();
+  } catch (error) {
 
-  } catch {
-    return res.status(401).json({
-      message:
-        "انتهت جلسة الدخول. سجل الدخول مرة أخرى."
-    });
+    console.error(error);
+
+    throw new Error(
+      "تعذر الاتصال بالسيرفر. تأكد أن Railway يعمل."
+    );
   }
+
+
+  const text =
+    await response.text();
+
+
+  let data = {};
+
+
+  try {
+
+    data =
+      text
+        ? JSON.parse(text)
+        : {};
+
+  } catch (error) {
+
+    console.error(
+      "Server response:",
+      text
+    );
+
+    throw new Error(
+      "السيرفر لم يرجع JSON. تأكد من أن Backend يعمل على Railway."
+    );
+  }
+
+
+  /*
+    Unauthorized
+    = Token غير موجود أو منتهي أو غير صحيح.
+  */
+
+  if (response.status === 401) {
+
+    clearSession();
+
+    loginView();
+
+    throw new Error(
+      data.message ||
+      "انتهت جلسة الدخول. سجل الدخول مرة أخرى."
+    );
+  }
+
+
+  if (!response.ok) {
+
+    throw new Error(
+      data.message ||
+      data.error ||
+      "حدث خطأ في السيرفر"
+    );
+  }
+
+
+  return data;
 }
 
 
-/* =====================================================
-   ADMIN
-===================================================== */
+/*
+=====================================================
+LOGIN VIEW
+=====================================================
+*/
 
-async function ensureAdmin() {
-  const r = await query(
-    "SELECT id FROM users WHERE username=$1",
-    ["admin"]
-  );
+function loginView() {
 
-  if (!r.rowCount) {
-    await query(
-      `
-      INSERT INTO users(
-        username,
-        password_hash
-      )
-      VALUES($1,$2)
-      `,
-      [
-        "admin",
-        hashPassword("admin123")
-      ]
+  /*
+    Login دائمًا لا يحتاج Token.
+  */
+
+  app.innerHTML = `
+
+    <div class="screen">
+
+      <div class="login card">
+
+        <div class="logo">
+          مــيــزان
+        </div>
+
+        <p class="sub">
+          إدارة مكتب المحاماة
+        </p>
+
+        <form id="loginForm">
+
+          <label>
+            اسم المستخدم
+          </label>
+
+          <input
+            id="username"
+            autocomplete="username"
+            required
+          >
+
+          <label>
+            كلمة المرور
+          </label>
+
+          <input
+            id="password"
+            type="password"
+            autocomplete="current-password"
+            required
+          >
+
+          <button
+            class="btn full"
+            type="submit"
+          >
+            تسجيل الدخول
+          </button>
+
+          <div
+            id="loginError"
+            class="error"
+          ></div>
+
+        </form>
+
+      </div>
+
+    </div>
+
+  `;
+
+
+  const form =
+    document.getElementById(
+      "loginForm"
     );
-  }
-}
 
 
-/* =====================================================
-   LOGIN
-===================================================== */
+  form.onsubmit =
+    async function (e) {
 
-app.post(
-  "/api/login",
-  async (req, res) => {
-    try {
+      e.preventDefault();
+
+
+      const errorBox =
+        document.getElementById(
+          "loginError"
+        );
+
+
+      errorBox.textContent = "";
+
+
       const username =
-        String(
-          req.body.username || ""
-        ).trim();
+        document
+          .getElementById("username")
+          .value
+          .trim();
+
 
       const password =
-        String(
-          req.body.password || ""
-        );
+        document
+          .getElementById("password")
+          .value;
 
-      const r = await query(
-        `
-        SELECT
-          id,
-          username,
-          password_hash
-        FROM users
-        WHERE username=$1
-        `,
-        [username]
-      );
 
-      const user = r.rows[0];
+      if (!username || !password) {
 
-      if (
-        !user ||
-        hashPassword(password) !==
-          user.password_hash
-      ) {
-        return res.status(401).json({
-          message:
-            "اسم المستخدم أو كلمة المرور غير صحيحة"
-        });
+        errorBox.textContent =
+          "اكتب اسم المستخدم وكلمة المرور.";
+
+        return;
       }
 
-      const token =
-        jwt.sign(
-          {
-            id: user.id,
-            username: user.username
-          },
-          JWT_SECRET,
-          {
-            expiresIn: "7d"
-          }
-        );
 
-      res.json({
-        success: true,
-        token,
-        user: {
-          id: user.id,
-          username: user.username
+      try {
+
+        const response =
+          await fetch(
+            `${API_BASE}/login`,
+            {
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json"
+              },
+
+              body:
+                JSON.stringify({
+                  username,
+                  password
+                }),
+
+              cache: "no-store"
+            }
+          );
+
+
+        const text =
+          await response.text();
+
+
+        let data = {};
+
+
+        try {
+
+          data =
+            text
+              ? JSON.parse(text)
+              : {};
+
+        } catch {
+
+          throw new Error(
+            "Backend لم يرجع JSON. تأكد أن رابط Railway صحيح ويعمل."
+          );
         }
-      });
-
-    } catch (e) {
-      console.error(e);
-
-      res.status(500).json({
-        message:
-          "حدث خطأ أثناء تسجيل الدخول"
-      });
-    }
-  }
-);
 
 
-/* =====================================================
-   DASHBOARD
-===================================================== */
+        if (!response.ok) {
 
-app.get(
-  "/api/dashboard",
-  auth,
-  async (req, res) => {
-    try {
-      const [c, p] =
-        await Promise.all([
-          query(
-            "SELECT COUNT(*)::int AS count FROM cases"
-          ),
-
-          query(
-            "SELECT COUNT(*)::int AS count FROM powers"
-          )
-        ]);
-
-      res.json({
-        cases: c.rows[0].count,
-        powers: p.rows[0].count
-      });
-
-    } catch (e) {
-      console.error(e);
-
-      res.status(500).json({
-        message:
-          "تعذر قراءة قاعدة البيانات"
-      });
-    }
-  }
-);
+          throw new Error(
+            data.message ||
+            data.error ||
+            "فشل تسجيل الدخول"
+          );
+        }
 
 
-/* =====================================================
-   PAGINATION
-===================================================== */
+        if (!data.token) {
 
-function pagination(req, total) {
-  const page =
-    Math.max(
-      1,
-      Number.parseInt(
-        req.query.page || "1",
-        10
-      ) || 1
-    );
+          throw new Error(
+            "لم يتم استلام Token من السيرفر."
+          );
+        }
 
-  const limit =
-    Math.min(
-      100,
-      Math.max(
-        1,
-        Number.parseInt(
-          req.query.limit || "50",
-          10
-        ) || 50
-      )
-    );
 
-  const pages =
-    Math.max(
-      1,
-      Math.ceil(total / limit)
-    );
+        /*
+          أهم نقطة:
+          Token في الذاكرة فقط.
 
-  const safePage =
-    Math.min(page, pages);
+          ❌ لا localStorage
+          ❌ لا sessionStorage
+        */
 
-  return {
-    page: safePage,
-    limit,
-    pages,
-    offset:
-      (safePage - 1) * limit
-  };
+        tokenValue =
+          String(data.token);
+
+
+        /*
+          بعد Login نفتح Dashboard.
+        */
+
+        try {
+
+          history.replaceState(
+            null,
+            "",
+            window.location.pathname +
+              window.location.search
+          );
+
+        } catch {
+
+          location.hash = "";
+
+        }
+
+
+        route();
+
+
+      } catch (error) {
+
+        console.error(error);
+
+
+        errorBox.textContent =
+          error.message ||
+          "حدث خطأ أثناء تسجيل الدخول";
+      }
+
+    };
 }
 
 
-/* =====================================================
-   SQL ARABIC NORMALIZATION
-===================================================== */
+/*
+=====================================================
+COMMON SHELL
+=====================================================
+*/
 
-function sqlNormalize(column) {
+function shell(title, sub) {
+
   return `
-    regexp_replace(
-      regexp_replace(
-        regexp_replace(
-          regexp_replace(
-            regexp_replace(
-              regexp_replace(
-                lower(coalesce(${column}, '')),
-                '[أإآٱ]',
-                'ا',
-                'g'
-              ),
-              'ى',
-              'ي',
-              'g'
-            ),
-            'ة',
-            'ه',
-            'g'
-          ),
-          'ؤ',
-          'و',
-          'g'
-        ),
-        'ئ',
-        'ي',
-        'g'
-      ),
-      '[^[:alnum:]ء-ي]+',
-      ' ',
-      'g'
-    )
+
+    <div class="screen">
+
+      <div class="container">
+
+        <div class="header">
+
+          <div>
+
+            <div class="logo">
+              مــيــزان
+            </div>
+
+            <div class="sub">
+              ${esc(sub)}
+            </div>
+
+          </div>
+
+          <div class="header-actions">
+
+            <button
+              class="btn secondary"
+              id="home"
+              type="button"
+            >
+              ↩ العودة للرئيسية
+            </button>
+
+            <button
+              class="btn danger"
+              id="logout"
+              type="button"
+            >
+              تسجيل الخروج
+            </button>
+
+          </div>
+
+        </div>
+
+        <div class="card page-card">
+
+          <h2>
+            ${esc(title)}
+          </h2>
+
+          <div id="content"></div>
+
+        </div>
+
+      </div>
+
+    </div>
+
   `;
 }
 
 
-/* =====================================================
-   SMART SEARCH
-===================================================== */
+/*
+=====================================================
+COMMON BUTTONS
+=====================================================
+*/
 
-function buildSmartSearch(
-  search,
-  columns,
-  params
-) {
-  const normalized =
-    normalizeText(search);
+function bindCommon() {
 
-  if (!normalized) {
-    return "";
-  }
-
-  const words =
-    normalized
-      .split(/\s+/)
-      .map(x => x.trim())
-      .filter(Boolean);
-
-  if (!words.length) {
-    return "";
-  }
-
-  const groups = [];
-
-  for (const word of words) {
-    const parameter =
-      `%${word}%`;
-
-    params.push(parameter);
-
-    const index =
-      params.length;
-
-    const conditions =
-      columns.map(
-        column =>
-          `${sqlNormalize(column)} LIKE $${index}`
-      );
-
-    groups.push(
-      `(${conditions.join(" OR ")})`
+  const home =
+    document.getElementById(
+      "home"
     );
+
+
+  const logout =
+    document.getElementById(
+      "logout"
+    );
+
+
+  if (home) {
+
+    home.onclick =
+      function () {
+
+        /*
+          الرجوع للـ Dashboard
+          مع استمرار الجلسة الحالية.
+        */
+
+        location.hash = "";
+
+      };
   }
 
-  return groups.join(" AND ");
+
+  if (logout) {
+
+    logout.onclick =
+      function () {
+
+        /*
+          حذف الـ Token من الذاكرة.
+        */
+
+        clearSession();
+
+        loginView();
+
+      };
+  }
 }
 
 
-/* =====================================================
-   CASES
-===================================================== */
+/*
+=====================================================
+DASHBOARD
+=====================================================
+*/
 
-app.get(
-  "/api/cases",
-  auth,
-  async (req, res) => {
-    try {
-      const q =
-        String(
-          req.query.q || ""
-        ).trim();
+async function dashboard() {
 
-      const incomplete =
-        String(
-          req.query.incomplete || "0"
-        ) === "1";
+  if (!token()) {
 
-      if (!q && !incomplete) {
-        return res.json({
-          data: [],
-          pagination: {
-            page: 1,
-            limit: 50,
-            total: 0,
-            pages: 1
-          }
-        });
+    return loginView();
+  }
+
+
+  app.innerHTML = `
+
+    <div class="screen">
+
+      <div class="container">
+
+        <div class="header">
+
+          <div>
+
+            <div class="logo">
+              مــيــزان
+            </div>
+
+            <div class="sub">
+              لوحة التحكم الرئيسية
+            </div>
+
+          </div>
+
+          <button
+            class="btn danger"
+            id="logout"
+            type="button"
+          >
+            تسجيل الخروج
+          </button>
+
+        </div>
+
+
+        <div
+          class="grid three"
+          id="stats"
+        ></div>
+
+
+        <div
+          class="grid"
+          style="margin-top:18px"
+        >
+
+          <div class="dashboard-card card">
+
+            <h2>
+              🔎 البحث العام
+            </h2>
+
+            <p class="small">
+              ابحث عن الموكل لتظهر ملفات الحفظ والتوكيلات الخاصة به.
+            </p>
+
+            <button
+              class="btn"
+              id="searchPage"
+              type="button"
+            >
+              فتح البحث العام
+            </button>
+
+          </div>
+
+
+          <div class="dashboard-card card">
+
+            <h2>
+              📁 ملفات الحفظ
+            </h2>
+
+            <p class="small">
+              إدارة ملفات الحفظ.
+            </p>
+
+            <button
+              class="btn"
+              id="casesPage"
+              type="button"
+            >
+              فتح ملفات الحفظ
+            </button>
+
+          </div>
+
+
+          <div class="dashboard-card card">
+
+            <h2>
+              📜 ملفات التوكيلات
+            </h2>
+
+            <p class="small">
+              إدارة ملفات التوكيلات.
+            </p>
+
+            <button
+              class="btn"
+              id="powersPage"
+              type="button"
+            >
+              فتح التوكيلات
+            </button>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  `;
+
+
+  document.getElementById(
+    "logout"
+  ).onclick =
+    function () {
+
+      clearSession();
+
+      loginView();
+
+    };
+
+
+  document.getElementById(
+    "searchPage"
+  ).onclick =
+    function () {
+
+      location.hash = "search";
+
+    };
+
+
+  document.getElementById(
+    "casesPage"
+  ).onclick =
+    function () {
+
+      location.hash = "cases";
+
+    };
+
+
+  document.getElementById(
+    "powersPage"
+  ).onclick =
+    function () {
+
+      location.hash = "powers";
+
+    };
+
+
+  const stats =
+    document.getElementById(
+      "stats"
+    );
+
+
+  try {
+
+    const d =
+      await api(
+        "/dashboard"
+      );
+
+
+    stats.innerHTML = `
+
+      <div class="stat card">
+
+        <div class="small">
+          ملفات الحفظ
+        </div>
+
+        <div class="num">
+          ${esc(d.cases ?? 0)}
+        </div>
+
+      </div>
+
+
+      <div class="stat card">
+
+        <div class="small">
+          التوكيلات
+        </div>
+
+        <div class="num">
+          ${esc(d.powers ?? 0)}
+        </div>
+
+      </div>
+
+
+      <div class="stat card">
+
+        <div class="small">
+          الحالة
+        </div>
+
+        <div
+          class="num"
+          style="font-size:22px"
+        >
+          متصلة
+        </div>
+
+      </div>
+
+    `;
+
+
+  } catch (error) {
+
+    stats.innerHTML = `
+
+      <div class="notice">
+
+        ${esc(error.message)}
+
+      </div>
+
+    `;
+  }
+}
+
+
+/*
+=====================================================
+MODAL
+=====================================================
+*/
+
+function modal(
+  title,
+  fields,
+  onSave
+) {
+
+  const m =
+    document.createElement(
+      "div"
+    );
+
+
+  m.className =
+    "modal-back";
+
+
+  m.innerHTML = `
+
+    <div class="modal card">
+
+      <div class="header">
+
+        <h3>
+          ${esc(title)}
+        </h3>
+
+        <button
+          class="btn secondary"
+          id="close"
+          type="button"
+        >
+          إغلاق
+        </button>
+
+      </div>
+
+
+      <form id="mf">
+
+        ${fields.map(
+          f => `
+
+            <label>
+
+              ${esc(f.label)}
+
+              <input
+                id="${esc(f.id)}"
+                value="${esc(f.value || "")}"
+                ${
+                  f.required === false
+                    ? ""
+                    : "required"
+                }
+              >
+
+            </label>
+
+          `
+        ).join("")}
+
+
+        <button
+          class="btn full"
+          type="submit"
+        >
+          حفظ
+        </button>
+
+
+        <div
+          id="me"
+          class="error"
+        ></div>
+
+      </form>
+
+    </div>
+
+  `;
+
+
+  document.body.appendChild(
+    m
+  );
+
+
+  m.querySelector(
+    "#close"
+  ).onclick =
+    function () {
+
+      m.remove();
+
+    };
+
+
+  m.querySelector(
+    "#mf"
+  ).onsubmit =
+    async function (e) {
+
+      e.preventDefault();
+
+
+      const values = {};
+
+
+      fields.forEach(
+        f => {
+
+          const input =
+            m.querySelector(
+              "#" + f.id
+            );
+
+
+          values[f.id] =
+            input.value.trim();
+
+        }
+      );
+
+
+      try {
+
+        await onSave(
+          values
+        );
+
+
+        m.remove();
+
+
+      } catch (error) {
+
+        m.querySelector(
+          "#me"
+        ).textContent =
+          error.message;
       }
 
-      const conditions = [];
-      const params = [];
+    };
+}
 
-      if (q) {
-        const search =
-          buildSmartSearch(
-            q,
-            [
-              "file_number",
-              "client_name"
-            ],
-            params
+
+/*
+=====================================================
+IMPORT CASES
+=====================================================
+*/
+
+async function importCases(file) {
+
+  if (!file) {
+    return;
+  }
+
+
+  const formData =
+    new FormData();
+
+
+  formData.append(
+    "file",
+    file
+  );
+
+
+  const result =
+    await api(
+      "/import/cases",
+      {
+        method: "POST",
+        body: formData
+      }
+    );
+
+
+  alert(
+    `تم استيراد ملفات الحفظ بنجاح
+
+إجمالي الصفوف: ${result.total ?? 0}
+تمت الإضافة: ${result.inserted ?? 0}
+البيانات الناقصة: ${result.incomplete ?? 0}
+المكرر: ${result.duplicate ?? 0}`
+  );
+}
+
+
+/*
+=====================================================
+IMPORT POWERS
+=====================================================
+*/
+
+async function importPowers(file) {
+
+  if (!file) {
+    return;
+  }
+
+
+  const formData =
+    new FormData();
+
+
+  formData.append(
+    "file",
+    file
+  );
+
+
+  const result =
+    await api(
+      "/import/powers",
+      {
+        method: "POST",
+        body: formData
+      }
+    );
+
+
+  alert(
+    `تم استيراد التوكيلات بنجاح
+
+إجمالي الصفوف: ${result.total ?? 0}
+تمت الإضافة: ${result.inserted ?? 0}
+البيانات الناقصة: ${result.incomplete ?? 0}
+المكرر: ${result.duplicate ?? 0}`
+  );
+}
+
+
+/*
+=====================================================
+CASES
+=====================================================
+*/
+
+async function casesView() {
+
+  if (!token()) {
+
+    return loginView();
+  }
+
+
+  app.innerHTML =
+    shell(
+      "ملفات الحفظ",
+      "إدارة ملفات الحفظ"
+    );
+
+
+  bindCommon();
+
+
+  const content =
+    document.getElementById(
+      "content"
+    );
+
+
+  let page = 1;
+  let q = "";
+  let incomplete = false;
+
+
+  async function render() {
+
+    content.innerHTML = `
+
+      <div class="toolbar">
+
+        <input
+          id="q"
+          class="search"
+          placeholder="ابحث برقم الملف أو اسم الموكل"
+          value="${esc(q)}"
+        >
+
+
+        <button
+          class="btn"
+          id="search"
+          type="button"
+        >
+          بحث
+        </button>
+
+
+        <button
+          class="btn secondary"
+          id="inc"
+          type="button"
+        >
+          البيانات الناقصة
+        </button>
+
+
+        <button
+          class="btn"
+          id="importCases"
+          type="button"
+        >
+          📥 استيراد Excel
+        </button>
+
+
+        <button
+          class="btn success"
+          id="add"
+          type="button"
+        >
+          + إضافة
+        </button>
+
+      </div>
+
+
+      <input
+        type="file"
+        id="casesFileInput"
+        accept=".xlsx,.xls,.csv"
+        style="display:none"
+      >
+
+
+      <div class="notice">
+
+        البيانات مخفية افتراضيًا.
+        لن تظهر إلا بعد البحث أو اختيار البيانات الناقصة.
+
+        <br>
+
+        <span class="small">
+          الاستيراد يقبل ملفات Excel بصيغ XLSX / XLS / CSV.
+        </span>
+
+      </div>
+
+
+      <div id="table"></div>
+
+
+      <div
+        id="pages"
+        class="pagination"
+      ></div>
+
+    `;
+
+
+    const importButton =
+      document.getElementById(
+        "importCases"
+      );
+
+
+    const fileInput =
+      document.getElementById(
+        "casesFileInput"
+      );
+
+
+    importButton.onclick =
+      function () {
+
+        fileInput.click();
+
+      };
+
+
+    fileInput.onchange =
+      async function () {
+
+        const file =
+          fileInput.files[0];
+
+
+        if (!file) {
+          return;
+        }
+
+
+        importButton.disabled =
+          true;
+
+
+        importButton.textContent =
+          "⏳ جاري الاستيراد...";
+
+
+        try {
+
+          await importCases(
+            file
           );
 
-        if (search) {
-          conditions.push(search);
+
+          q = "";
+          incomplete = false;
+          page = 1;
+
+
+          await load();
+
+
+        } catch (error) {
+
+          alert(
+            error.message
+          );
+
+
+        } finally {
+
+          importButton.disabled =
+            false;
+
+
+          importButton.textContent =
+            "📥 استيراد Excel";
+
+
+          fileInput.value =
+            "";
         }
-      }
 
-      if (incomplete) {
-        conditions.push(`
-          (
-            btrim(file_number)='' OR
-            btrim(client_name)=''
-          )
-        `);
-      }
+      };
 
-      const where =
-        conditions.length
-          ? `WHERE ${conditions.join(" AND ")}`
-          : "";
 
-      const count =
-        await query(
-          `
-          SELECT COUNT(*)::int AS count
-          FROM cases
-          ${where}
-          `,
-          params
-        );
+    document.getElementById(
+      "search"
+    ).onclick =
+      function () {
 
-      const total =
-        count.rows[0].count;
+        q =
+          document
+            .getElementById("q")
+            .value
+            .trim();
 
-      const pg =
-        pagination(
-          req,
-          total
-        );
 
-      const data =
-        await query(
-          `
-          SELECT
-            id,
-            file_number,
-            client_name,
-            created_at,
-            updated_at
-          FROM cases
-          ${where}
-          ORDER BY id DESC
-          LIMIT $${params.length + 1}
-          OFFSET $${params.length + 2}
-          `,
-          [
-            ...params,
-            pg.limit,
-            pg.offset
-          ]
-        );
+        incomplete = false;
+        page = 1;
 
-      res.json({
-        data: data.rows,
 
-        pagination: {
-          page: pg.page,
-          limit: pg.limit,
-          total,
-          pages: pg.pages
-        }
-      });
+        load();
 
-    } catch (e) {
-      console.error(e);
+      };
 
-      res.status(500).json({
-        message:
-          "تعذر تحميل ملفات الحفظ"
-      });
-    }
+
+    document.getElementById(
+      "inc"
+    ).onclick =
+      function () {
+
+        q = "";
+        incomplete = true;
+        page = 1;
+
+
+        load();
+
+      };
+
+
+    document.getElementById(
+      "add"
+    ).onclick =
+      add;
+
+
+    await load();
+
   }
-);
 
 
-/* =====================================================
-   LAST CASE FILE
-===================================================== */
+  async function load() {
 
-app.get(
-  "/api/cases/last-file",
-  auth,
-  async (req, res) => {
     try {
-      const r =
-        await query(`
-          SELECT
-            COALESCE(
-              MAX(
-                NULLIF(
-                  regexp_replace(
-                    file_number,
-                    '[^0-9]',
-                    '',
-                    'g'
-                  ),
-                  ''
-                )::bigint
-              ),
-              0
-            ) AS last
-          FROM cases
-        `);
+
+      const d =
+        await api(
+          `/cases?q=${encodeURIComponent(q)}&incomplete=${incomplete ? 1 : 0}&page=${page}&limit=50`
+        );
+
+
+      const table =
+        document.getElementById(
+          "table"
+        );
+
+
+      if (
+        !d.data ||
+        !Array.isArray(d.data) ||
+        !d.data.length
+      ) {
+
+        table.innerHTML = `
+
+          <div class="notice">
+            لا توجد نتائج.
+          </div>
+
+        `;
+
+      } else {
+
+        table.innerHTML = `
+
+          <div class="table-wrap">
+
+            <table>
+
+              <thead>
+
+                <tr>
+
+                  <th>
+                    رقم الملف
+                  </th>
+
+                  <th>
+                    اسم الموكل
+                  </th>
+
+                  <th>
+                    إجراءات
+                  </th>
+
+                </tr>
+
+              </thead>
+
+
+              <tbody>
+
+                ${d.data.map(
+                  r => `
+
+                    <tr>
+
+                      <td>
+                        ${esc(
+                          r.file_number
+                        )}
+                      </td>
+
+                      <td>
+                        ${esc(
+                          r.client_name
+                        )}
+                      </td>
+
+                      <td class="actions">
+
+                        <button
+                          class="btn secondary e"
+                          data-id="${esc(r.id)}"
+                          type="button"
+                        >
+                          تعديل
+                        </button>
+
+
+                        <button
+                          class="btn danger d"
+                          data-id="${esc(r.id)}"
+                          type="button"
+                        >
+                          حذف
+                        </button>
+
+                      </td>
+
+                    </tr>
+
+                  `
+                ).join("")}
+
+              </tbody>
+
+            </table>
+
+          </div>
+
+        `;
+      }
+
+
+      table
+        .querySelectorAll(
+          ".e"
+        )
+        .forEach(
+          button => {
+
+            button.onclick =
+              function () {
+
+                const row =
+                  d.data.find(
+                    x =>
+                      String(x.id) ===
+                      String(
+                        button.dataset.id
+                      )
+                  );
+
+
+                if (row) {
+                  edit(row);
+                }
+
+              };
+
+          }
+        );
+
+
+      table
+        .querySelectorAll(
+          ".d"
+        )
+        .forEach(
+          button => {
+
+            button.onclick =
+              function () {
+
+                del(
+                  button.dataset.id
+                );
+
+              };
+
+          }
+        );
+
+
+      const pages =
+        document.getElementById(
+          "pages"
+        );
+
+
+      const p =
+        d.pagination || {
+          page: 1,
+          pages: 1,
+          total: 0
+        };
+
+
+      pages.innerHTML = `
+
+        <button
+          class="btn secondary"
+          id="pr"
+          ${
+            p.page <= 1
+              ? "disabled"
+              : ""
+          }
+          type="button"
+        >
+          السابق
+        </button>
+
+
+        <span>
+          صفحة ${p.page} من ${p.pages}
+          — ${p.total} سجل
+        </span>
+
+
+        <button
+          class="btn secondary"
+          id="nx"
+          ${
+            p.page >= p.pages
+              ? "disabled"
+              : ""
+          }
+          type="button"
+        >
+          التالي
+        </button>
+
+      `;
+
+
+      document.getElementById(
+        "pr"
+      ).onclick =
+        function () {
+
+          if (page > 1) {
+
+            page--;
+
+            load();
+
+          }
+
+        };
+
+
+      document.getElementById(
+        "nx"
+      ).onclick =
+        function () {
+
+          if (
+            page < p.pages
+          ) {
+
+            page++;
+
+            load();
+
+          }
+
+        };
+
+
+    } catch (error) {
+
+      const table =
+        document.getElementById(
+          "table"
+        );
+
+
+      if (table) {
+
+        table.innerHTML = `
+
+          <div class="error">
+            ${esc(error.message)}
+          </div>
+
+        `;
+      }
+
+    }
+
+  }
+
+
+  async function add() {
+
+    try {
 
       const last =
-        Number(
-          r.rows[0].last || 0
+        await api(
+          "/cases/last-file"
         );
 
-      res.json({
-        last,
-        next:
-          last > 0
-            ? last + 1
-            : 1
-      });
 
-    } catch (e) {
-      console.error(e);
+      modal(
+        "إضافة ملف حفظ",
 
-      res.status(500).json({
-        message:
-          "تعذر حساب رقم الملف التالي"
-      });
-    }
-  }
-);
-
-
-/* =====================================================
-   ADD CASE
-===================================================== */
-
-app.post(
-  "/api/cases",
-  auth,
-  async (req, res) => {
-    try {
-      const fileNumber =
-        String(
-          req.body.file_number ?? ""
-        ).trim();
-
-      const clientName =
-        String(
-          req.body.client_name ?? ""
-        ).trim();
-
-      const r =
-        await query(
-          `
-          INSERT INTO cases(
-            file_number,
-            client_name
-          )
-          VALUES($1,$2)
-          RETURNING
-            id,
-            file_number,
-            client_name,
-            created_at,
-            updated_at
-          `,
-          [
-            fileNumber,
-            clientName
-          ]
-        );
-
-      res.status(201).json(
-        r.rows[0]
-      );
-
-    } catch (e) {
-      console.error(e);
-
-      res.status(500).json({
-        message:
-          "تعذر إضافة ملف الحفظ"
-      });
-    }
-  }
-);
-
-
-/* =====================================================
-   EDIT CASE
-===================================================== */
-
-app.put(
-  "/api/cases/:id",
-  auth,
-  async (req, res) => {
-    try {
-      const id =
-        Number(req.params.id);
-
-      const r =
-        await query(
-          `
-          UPDATE cases
-          SET
-            file_number=$1,
-            client_name=$2,
-            updated_at=NOW()
-          WHERE id=$3
-          RETURNING
-            id,
-            file_number,
-            client_name,
-            created_at,
-            updated_at
-          `,
-          [
-            String(
-              req.body.file_number ?? ""
-            ).trim(),
-
-            String(
-              req.body.client_name ?? ""
-            ).trim(),
-
-            id
-          ]
-        );
-
-      if (!r.rowCount) {
-        return res.status(404).json({
-          message:
-            "ملف الحفظ غير موجود"
-        });
-      }
-
-      res.json(
-        r.rows[0]
-      );
-
-    } catch (e) {
-      console.error(e);
-
-      res.status(500).json({
-        message:
-          "تعذر تعديل ملف الحفظ"
-      });
-    }
-  }
-);
-
-
-/* =====================================================
-   DELETE CASE
-===================================================== */
-
-app.delete(
-  "/api/cases/:id",
-  auth,
-  async (req, res) => {
-    try {
-      const r =
-        await query(
-          "DELETE FROM cases WHERE id=$1",
-          [
-            Number(
-              req.params.id
-            )
-          ]
-        );
-
-      if (!r.rowCount) {
-        return res.status(404).json({
-          message:
-            "ملف الحفظ غير موجود"
-        });
-      }
-
-      res.json({
-        success: true
-      });
-
-    } catch (e) {
-      console.error(e);
-
-      res.status(500).json({
-        message:
-          "تعذر حذف ملف الحفظ"
-      });
-    }
-  }
-);
-
-
-/* =====================================================
-   IMPORT CASES
-   يستورد كل الصفوف بدون تخطي
-===================================================== */
-
-app.post(
-  "/api/import/cases",
-  auth,
-  upload.single("file"),
-  async (req, res) => {
-    try {
-
-      if (!req.file) {
-        return res.status(400).json({
-          message:
-            "لم يتم اختيار ملف"
-        });
-      }
-
-
-      const workbook =
-        XLSX.read(
-          req.file.buffer,
+        [
           {
-            type: "buffer",
-            cellDates: false
-          }
-        );
+            id: "file_number",
+            label: "رقم الملف",
+            value:
+              last.next ??
+              last.file_number ??
+              ""
+          },
 
-
-      if (!workbook.SheetNames.length) {
-        return res.status(400).json({
-          message:
-            "ملف Excel فارغ"
-        });
-      }
-
-
-      const sheet =
-        workbook.Sheets[
-          workbook.SheetNames[0]
-        ];
-
-
-      /*
-        raw:false
-        حتى نحصل على القيمة الظاهرة في Excel
-        ونحافظ قدر الإمكان على تنسيق الأرقام.
-      */
-
-      const rows =
-        XLSX.utils.sheet_to_json(
-          sheet,
           {
-            defval: "",
-            raw: false
+            id: "client_name",
+            label: "اسم الموكل"
           }
-        );
+        ],
 
 
-      let inserted = 0;
+        async values => {
 
+          await api(
+            "/cases",
+            {
+              method: "POST",
 
-      /*
-        مهم جدًا:
-        لا يوجد هنا:
-        - duplicate check
-        - skip
-        - incomplete skip
-        - Set
-        - مقارنة مع قاعدة البيانات
-
-        كل صف يتم إدخاله كما هو.
-      */
-
-      for (const raw of rows) {
-
-        const row =
-          normalizeRow(raw);
-
-
-        const fileNumber =
-          caseFile(row);
-
-
-        const clientName =
-          client(row);
-
-
-        await query(
-          `
-          INSERT INTO cases(
-            file_number,
-            client_name
-          )
-          VALUES($1,$2)
-          `,
-          [
-            fileNumber,
-            clientName
-          ]
-        );
-
-
-        inserted++;
-      }
-
-
-      res.json({
-        success: true,
-        total: rows.length,
-        inserted,
-        skipped: 0,
-        duplicate: 0,
-        incomplete: 0
-      });
-
-
-    } catch (e) {
-
-      console.error(
-        "IMPORT CASES ERROR:",
-        e
-      );
-
-      res.status(500).json({
-        message:
-          "حدث خطأ أثناء استيراد ملفات الحفظ",
-        error:
-          e.message
-      });
-    }
-  }
-);
-
-
-/* =====================================================
-   POWERS
-===================================================== */
-
-app.get(
-  "/api/powers",
-  auth,
-  async (req, res) => {
-    try {
-
-      const q =
-        String(
-          req.query.q || ""
-        ).trim();
-
-
-      const incomplete =
-        String(
-          req.query.incomplete || "0"
-        ) === "1";
-
-
-      if (!q && !incomplete) {
-        return res.json({
-          data: [],
-          pagination: {
-            page: 1,
-            limit: 50,
-            total: 0,
-            pages: 1
-          }
-        });
-      }
-
-
-      const conditions = [];
-      const params = [];
-
-
-      if (q) {
-
-        const search =
-          buildSmartSearch(
-            q,
-            [
-              "file_number",
-              "client_name",
-              "power_number",
-              "documentation_authority"
-            ],
-            params
+              body:
+                JSON.stringify(
+                  values
+                )
+            }
           );
 
 
-        if (search) {
-          conditions.push(search);
+          q =
+            values.file_number;
+
+          incomplete = false;
+          page = 1;
+
+
+          await load();
+
         }
-      }
+      );
 
 
-      if (incomplete) {
+    } catch (error) {
 
-        conditions.push(`
-          (
-            btrim(file_number)='' OR
-            btrim(client_name)='' OR
-            btrim(power_number)='' OR
-            btrim(documentation_authority)=''
-          )
-        `);
-      }
+      alert(
+        error.message
+      );
 
-
-      const where =
-        conditions.length
-          ? `WHERE ${conditions.join(" AND ")}`
-          : "";
-
-
-      const count =
-        await query(
-          `
-          SELECT COUNT(*)::int AS count
-          FROM powers
-          ${where}
-          `,
-          params
-        );
-
-
-      const total =
-        count.rows[0].count;
-
-
-      const pg =
-        pagination(
-          req,
-          total
-        );
-
-
-      const data =
-        await query(
-          `
-          SELECT
-            id,
-            file_number,
-            client_name,
-            power_number,
-            documentation_authority,
-            created_at,
-            updated_at
-          FROM powers
-          ${where}
-          ORDER BY id DESC
-          LIMIT $${params.length + 1}
-          OFFSET $${params.length + 2}
-          `,
-          [
-            ...params,
-            pg.limit,
-            pg.offset
-          ]
-        );
-
-
-      res.json({
-        data: data.rows,
-
-        pagination: {
-          page: pg.page,
-          limit: pg.limit,
-          total,
-          pages: pg.pages
-        }
-      });
-
-
-    } catch (e) {
-
-      console.error(e);
-
-      res.status(500).json({
-        message:
-          "تعذر تحميل التوكيلات"
-      });
     }
+
   }
-);
 
 
-/* =====================================================
-   LAST POWER FILE
-===================================================== */
+  function edit(row) {
 
-app.get(
-  "/api/powers/last-file",
-  auth,
-  async (req, res) => {
-    try {
+    modal(
+      "تعديل ملف الحفظ",
 
-      const r =
-        await query(`
-          SELECT
-            GREATEST(
-              2431,
-              COALESCE(
-                MAX(
-                  NULLIF(
-                    regexp_replace(
-                      file_number,
-                      '[^0-9]',
-                      '',
-                      'g'
-                    ),
-                    ''
-                  )::bigint
-                ),
-                0
+      [
+        {
+          id: "file_number",
+          label: "رقم الملف",
+          value:
+            row.file_number
+        },
+
+        {
+          id: "client_name",
+          label: "اسم الموكل",
+          value:
+            row.client_name
+        }
+      ],
+
+
+      async values => {
+
+        await api(
+          `/cases/${row.id}`,
+          {
+            method: "PUT",
+
+            body:
+              JSON.stringify(
+                values
               )
-            ) AS last
-          FROM powers
-        `);
+          }
+        );
 
+
+        await load();
+
+      }
+    );
+
+  }
+
+
+  async function del(id) {
+
+    if (
+      !confirm(
+        "هل تريد حذف هذا الملف؟"
+      )
+    ) {
+      return;
+    }
+
+
+    try {
+
+      await api(
+        `/cases/${id}`,
+        {
+          method: "DELETE"
+        }
+      );
+
+
+      await load();
+
+
+    } catch (error) {
+
+      alert(
+        error.message
+      );
+
+    }
+
+  }
+
+
+  await render();
+
+}
+
+
+/*
+=====================================================
+POWERS
+=====================================================
+*/
+
+async function powersView() {
+
+  if (!token()) {
+
+    return loginView();
+  }
+
+
+  app.innerHTML =
+    shell(
+      "ملفات التوكيلات",
+      "إدارة ملفات التوكيلات"
+    );
+
+
+  bindCommon();
+
+
+  const content =
+    document.getElementById(
+      "content"
+    );
+
+
+  let page = 1;
+  let q = "";
+  let incomplete = false;
+
+
+  async function render() {
+
+    content.innerHTML = `
+
+      <div class="toolbar">
+
+        <input
+          id="q"
+          class="search"
+          placeholder="رقم الملف أو اسم الموكل أو رقم التوكيل أو جهة التوثيق"
+          value="${esc(q)}"
+        >
+
+
+        <button
+          class="btn"
+          id="search"
+          type="button"
+        >
+          بحث
+        </button>
+
+
+        <button
+          class="btn secondary"
+          id="inc"
+          type="button"
+        >
+          البيانات الناقصة
+        </button>
+
+
+        <button
+          class="btn"
+          id="importPowers"
+          type="button"
+        >
+          📥 استيراد Excel
+        </button>
+
+
+        <button
+          class="btn success"
+          id="add"
+          type="button"
+        >
+          + إضافة
+        </button>
+
+      </div>
+
+
+      <input
+        type="file"
+        id="powersFileInput"
+        accept=".xlsx,.xls,.csv"
+        style="display:none"
+      >
+
+
+      <div class="notice">
+
+        البيانات مخفية افتراضيًا.
+        لن تظهر إلا بعد البحث أو اختيار البيانات الناقصة.
+
+        <br>
+
+        <span class="small">
+          الاستيراد يقبل XLSX / XLS / CSV ويقرأ جهة التوثيق أيضًا.
+        </span>
+
+      </div>
+
+
+      <div id="table"></div>
+
+
+      <div
+        id="pages"
+        class="pagination"
+      ></div>
+
+    `;
+
+
+    const importButton =
+      document.getElementById(
+        "importPowers"
+      );
+
+
+    const fileInput =
+      document.getElementById(
+        "powersFileInput"
+      );
+
+
+    importButton.onclick =
+      function () {
+
+        fileInput.click();
+
+      };
+
+
+    fileInput.onchange =
+      async function () {
+
+        const file =
+          fileInput.files[0];
+
+
+        if (!file) {
+          return;
+        }
+
+
+        importButton.disabled =
+          true;
+
+
+        importButton.textContent =
+          "⏳ جاري الاستيراد...";
+
+
+        try {
+
+          await importPowers(
+            file
+          );
+
+
+          q = "";
+          incomplete = false;
+          page = 1;
+
+
+          await load();
+
+
+        } catch (error) {
+
+          alert(
+            error.message
+          );
+
+
+        } finally {
+
+          importButton.disabled =
+            false;
+
+
+          importButton.textContent =
+            "📥 استيراد Excel";
+
+
+          fileInput.value =
+            "";
+
+        }
+
+      };
+
+
+    document.getElementById(
+      "search"
+    ).onclick =
+      function () {
+
+        q =
+          document
+            .getElementById("q")
+            .value
+            .trim();
+
+
+        incomplete = false;
+        page = 1;
+
+
+        load();
+
+      };
+
+
+    document.getElementById(
+      "inc"
+    ).onclick =
+      function () {
+
+        q = "";
+        incomplete = true;
+        page = 1;
+
+
+        load();
+
+      };
+
+
+    document.getElementById(
+      "add"
+    ).onclick =
+      add;
+
+
+    await load();
+
+  }
+
+
+  async function load() {
+
+    try {
+
+      const d =
+        await api(
+          `/powers?q=${encodeURIComponent(q)}&incomplete=${incomplete ? 1 : 0}&page=${page}&limit=50`
+        );
+
+
+      const table =
+        document.getElementById(
+          "table"
+        );
+
+
+      if (
+        !d.data ||
+        !Array.isArray(d.data) ||
+        !d.data.length
+      ) {
+
+        table.innerHTML = `
+
+          <div class="notice">
+            لا توجد نتائج.
+          </div>
+
+        `;
+
+      } else {
+
+        table.innerHTML = `
+
+          <div class="table-wrap">
+
+            <table>
+
+              <thead>
+
+                <tr>
+
+                  <th>
+                    رقم الملف
+                  </th>
+
+                  <th>
+                    اسم الموكل
+                  </th>
+
+                  <th>
+                    رقم التوكيل
+                  </th>
+
+                  <th>
+                    جهة التوثيق
+                  </th>
+
+                  <th>
+                    إجراءات
+                  </th>
+
+                </tr>
+
+              </thead>
+
+
+              <tbody>
+
+                ${d.data.map(
+                  r => `
+
+                    <tr>
+
+                      <td>
+                        ${esc(
+                          r.file_number
+                        )}
+                      </td>
+
+                      <td>
+                        ${esc(
+                          r.client_name
+                        )}
+                      </td>
+
+                      <td>
+                        ${esc(
+                          r.power_number
+                        )}
+                      </td>
+
+                      <td>
+                        ${esc(
+                          r.documentation_authority
+                        )}
+                      </td>
+
+                      <td class="actions">
+
+                        <button
+                          class="btn secondary e"
+                          data-id="${esc(r.id)}"
+                          type="button"
+                        >
+                          تعديل
+                        </button>
+
+
+                        <button
+                          class="btn danger d"
+                          data-id="${esc(r.id)}"
+                          type="button"
+                        >
+                          حذف
+                        </button>
+
+                      </td>
+
+                    </tr>
+
+                  `
+                ).join("")}
+
+              </tbody>
+
+            </table>
+
+          </div>
+
+        `;
+      }
+
+
+      table
+        .querySelectorAll(
+          ".e"
+        )
+        .forEach(
+          button => {
+
+            button.onclick =
+              function () {
+
+                const row =
+                  d.data.find(
+                    x =>
+                      String(x.id) ===
+                      String(
+                        button.dataset.id
+                      )
+                  );
+
+
+                if (row) {
+                  edit(row);
+                }
+
+              };
+
+          }
+        );
+
+
+      table
+        .querySelectorAll(
+          ".d"
+        )
+        .forEach(
+          button => {
+
+            button.onclick =
+              function () {
+
+                del(
+                  button.dataset.id
+                );
+
+              };
+
+          }
+        );
+
+
+      const pages =
+        document.getElementById(
+          "pages"
+        );
+
+
+      const p =
+        d.pagination || {
+          page: 1,
+          pages: 1,
+          total: 0
+        };
+
+
+      pages.innerHTML = `
+
+        <button
+          class="btn secondary"
+          id="pr"
+          ${
+            p.page <= 1
+              ? "disabled"
+              : ""
+          }
+          type="button"
+        >
+          السابق
+        </button>
+
+
+        <span>
+          صفحة ${p.page} من ${p.pages}
+          — ${p.total} سجل
+        </span>
+
+
+        <button
+          class="btn secondary"
+          id="nx"
+          ${
+            p.page >= p.pages
+              ? "disabled"
+              : ""
+          }
+          type="button"
+        >
+          التالي
+        </button>
+
+      `;
+
+
+      document.getElementById(
+        "pr"
+      ).onclick =
+        function () {
+
+          if (page > 1) {
+
+            page--;
+
+            load();
+
+          }
+
+        };
+
+
+      document.getElementById(
+        "nx"
+      ).onclick =
+        function () {
+
+          if (
+            page < p.pages
+          ) {
+
+            page++;
+
+            load();
+
+          }
+
+        };
+
+
+    } catch (error) {
+
+      const table =
+        document.getElementById(
+          "table"
+        );
+
+
+      if (table) {
+
+        table.innerHTML = `
+
+          <div class="error">
+            ${esc(error.message)}
+          </div>
+
+        `;
+
+      }
+
+    }
+
+  }
+
+
+  async function add() {
+
+    try {
 
       const last =
-        Number(
-          r.rows[0].last || 2431
+        await api(
+          "/powers/last-file"
         );
 
 
-      res.json({
-        last,
-        next:
-          last + 1
-      });
+      modal(
+        "إضافة توكيل",
+
+        [
+          {
+            id: "file_number",
+            label: "رقم الملف",
+            value:
+              last.next ??
+              last.file_number ??
+              "2432"
+          },
+
+          {
+            id: "client_name",
+            label: "اسم الموكل"
+          },
+
+          {
+            id: "power_number",
+            label: "رقم التوكيل"
+          },
+
+          {
+            id: "documentation_authority",
+            label: "جهة التوثيق"
+          }
+        ],
 
 
-    } catch (e) {
+        async values => {
 
-      console.error(e);
+          await api(
+            "/powers",
+            {
+              method: "POST",
 
-      res.status(500).json({
-        message:
-          "تعذر حساب رقم الملف التالي"
-      });
-    }
-  }
-);
-
-
-/* =====================================================
-   ADD POWER
-===================================================== */
-
-app.post(
-  "/api/powers",
-  auth,
-  async (req, res) => {
-    try {
-
-      const fileNumber =
-        String(
-          req.body.file_number ?? ""
-        ).trim();
-
-
-      const clientName =
-        String(
-          req.body.client_name ?? ""
-        ).trim();
-
-
-      const powerNumber =
-        String(
-          req.body.power_number ?? ""
-        ).trim();
-
-
-      const documentationAuthority =
-        String(
-          req.body.documentation_authority ?? ""
-        ).trim();
-
-
-      /*
-        الإضافة اليدوية فقط تمنع تكرار رقم التوكيل.
-        الاستيراد لا يستخدم هذا الشرط.
-      */
-
-      if (powerNumber) {
-
-        const duplicate =
-          await query(
-            `
-            SELECT id
-            FROM powers
-            WHERE
-              lower(trim(power_number))
-              =
-              lower(trim($1))
-            LIMIT 1
-            `,
-            [powerNumber]
+              body:
+                JSON.stringify(
+                  values
+                )
+            }
           );
 
 
-        if (duplicate.rowCount) {
+          q =
+            values.power_number;
 
-          return res.status(409).json({
-            message:
-              "رقم التوكيل موجود بالفعل ولا يمكن تكراره."
-          });
+          incomplete = false;
+          page = 1;
+
+
+          await load();
+
         }
-      }
-
-
-      const r =
-        await query(
-          `
-          INSERT INTO powers(
-            file_number,
-            client_name,
-            power_number,
-            documentation_authority
-          )
-          VALUES($1,$2,$3,$4)
-          RETURNING
-            id,
-            file_number,
-            client_name,
-            power_number,
-            documentation_authority,
-            created_at,
-            updated_at
-          `,
-          [
-            fileNumber,
-            clientName,
-            powerNumber,
-            documentationAuthority
-          ]
-        );
-
-
-      res.status(201).json(
-        r.rows[0]
       );
 
 
-    } catch (e) {
+    } catch (error) {
 
-      console.error(e);
+      alert(
+        error.message
+      );
 
-      res.status(500).json({
-        message:
-          "تعذر إضافة التوكيل"
-      });
     }
+
   }
-);
 
 
-/* =====================================================
-   EDIT POWER
-===================================================== */
+  function edit(row) {
 
-app.put(
-  "/api/powers/:id",
-  auth,
-  async (req, res) => {
-    try {
+    modal(
+      "تعديل التوكيل",
 
-      const id =
-        Number(req.params.id);
+      [
+        {
+          id: "file_number",
+          label: "رقم الملف",
+          value:
+            row.file_number
+        },
 
+        {
+          id: "client_name",
+          label: "اسم الموكل",
+          value:
+            row.client_name
+        },
 
-      const fileNumber =
-        String(
-          req.body.file_number ?? ""
-        ).trim();
+        {
+          id: "power_number",
+          label: "رقم التوكيل",
+          value:
+            row.power_number
+        },
 
-
-      const clientName =
-        String(
-          req.body.client_name ?? ""
-        ).trim();
-
-
-      const powerNumber =
-        String(
-          req.body.power_number ?? ""
-        ).trim();
-
-
-      const documentationAuthority =
-        String(
-          req.body.documentation_authority ?? ""
-        ).trim();
-
-
-      if (powerNumber) {
-
-        const duplicate =
-          await query(
-            `
-            SELECT id
-            FROM powers
-            WHERE
-              lower(trim(power_number))
-              =
-              lower(trim($1))
-              AND id <> $2
-            LIMIT 1
-            `,
-            [
-              powerNumber,
-              id
-            ]
-          );
-
-
-        if (duplicate.rowCount) {
-
-          return res.status(409).json({
-            message:
-              "رقم التوكيل موجود بالفعل في سجل آخر."
-          });
+        {
+          id: "documentation_authority",
+          label: "جهة التوثيق",
+          value:
+            row.documentation_authority
         }
-      }
+      ],
 
 
-      const r =
-        await query(
-          `
-          UPDATE powers
-          SET
-            file_number=$1,
-            client_name=$2,
-            power_number=$3,
-            documentation_authority=$4,
-            updated_at=NOW()
-          WHERE id=$5
-          RETURNING
-            id,
-            file_number,
-            client_name,
-            power_number,
-            documentation_authority,
-            created_at,
-            updated_at
-          `,
-          [
-            fileNumber,
-            clientName,
-            powerNumber,
-            documentationAuthority,
-            id
-          ]
+      async values => {
+
+        await api(
+          `/powers/${row.id}`,
+          {
+            method: "PUT",
+
+            body:
+              JSON.stringify(
+                values
+              )
+          }
         );
 
 
-      if (!r.rowCount) {
+        await load();
 
-        return res.status(404).json({
-          message:
-            "التوكيل غير موجود"
-        });
       }
+    );
+
+  }
 
 
-      res.json(
-        r.rows[0]
+  async function del(id) {
+
+    if (
+      !confirm(
+        "هل تريد حذف هذا التوكيل؟"
+      )
+    ) {
+      return;
+    }
+
+
+    try {
+
+      await api(
+        `/powers/${id}`,
+        {
+          method: "DELETE"
+        }
       );
 
 
-    } catch (e) {
+      await load();
 
-      console.error(e);
 
-      res.status(500).json({
-        message:
-          "تعذر تعديل التوكيل"
-      });
-    }
-  }
-);
+    } catch (error) {
 
-
-/* =====================================================
-   DELETE POWER
-===================================================== */
-
-app.delete(
-  "/api/powers/:id",
-  auth,
-  async (req, res) => {
-    try {
-
-      const r =
-        await query(
-          "DELETE FROM powers WHERE id=$1",
-          [
-            Number(
-              req.params.id
-            )
-          ]
-        );
-
-
-      if (!r.rowCount) {
-
-        return res.status(404).json({
-          message:
-            "التوكيل غير موجود"
-        });
-      }
-
-
-      res.json({
-        success: true
-      });
-
-
-    } catch (e) {
-
-      console.error(e);
-
-      res.status(500).json({
-        message:
-          "تعذر حذف التوكيل"
-      });
-    }
-  }
-);
-
-
-/* =====================================================
-   IMPORT POWERS
-   يستورد كل الصفوف
-   ويستورد جهة التوثيق
-===================================================== */
-
-app.post(
-  "/api/import/powers",
-  auth,
-  upload.single("file"),
-  async (req, res) => {
-
-    try {
-
-      if (!req.file) {
-
-        return res.status(400).json({
-          message:
-            "لم يتم اختيار ملف"
-        });
-      }
-
-
-      const workbook =
-        XLSX.read(
-          req.file.buffer,
-          {
-            type: "buffer",
-            cellDates: false
-          }
-        );
-
-
-      if (!workbook.SheetNames.length) {
-
-        return res.status(400).json({
-          message:
-            "ملف Excel فارغ"
-        });
-      }
-
-
-      const sheet =
-        workbook.Sheets[
-          workbook.SheetNames[0]
-        ];
-
-
-      /*
-        raw:false
-        للحفاظ على القيم الظاهرة في Excel.
-      */
-
-      const rows =
-        XLSX.utils.sheet_to_json(
-          sheet,
-          {
-            defval: "",
-            raw: false
-          }
-        );
-
-
-      let inserted = 0;
-
-
-      /*
-        =================================================
-        مهم جدًا
-        =================================================
-
-        هنا تم حذف كل الآتي:
-
-        ❌ duplicate check
-        ❌ importedPowerNumbers
-        ❌ SELECT duplicate
-        ❌ incomplete skip
-        ❌ skipped
-        ❌ continue
-
-        وبالتالي:
-        كل صف في Excel يدخل قاعدة البيانات.
-      */
-
-
-      for (const raw of rows) {
-
-        const row =
-          normalizeRow(raw);
-
-
-        /*
-          استخراج البيانات
-        */
-
-        const fileNumber =
-          caseFile(row);
-
-
-        const clientName =
-          client(row);
-
-
-        const powerNum =
-          powerNumber(row);
-
-
-        /*
-          استخراج جهة التوثيق
-          مهما كان اسم العمود من الأسماء المدعومة.
-        */
-
-        const authName =
-          authority(row);
-
-
-        console.log(
-          "IMPORT POWER:",
-          {
-            fileNumber,
-            clientName,
-            powerNum,
-            authName
-          }
-        );
-
-
-        /*
-          لا يوجد أي شرط يمنع الإدخال.
-        */
-
-        await query(
-          `
-          INSERT INTO powers(
-            file_number,
-            client_name,
-            power_number,
-            documentation_authority
-          )
-          VALUES($1,$2,$3,$4)
-          `,
-          [
-            fileNumber,
-            clientName,
-            powerNum,
-            authName
-          ]
-        );
-
-
-        inserted++;
-      }
-
-
-      res.json({
-        success: true,
-
-        total:
-          rows.length,
-
-        inserted,
-
-        skipped:
-          0,
-
-        duplicate:
-          0,
-
-        incomplete:
-          0
-      });
-
-
-    } catch (e) {
-
-      console.error(
-        "IMPORT POWERS ERROR:",
-        e
+      alert(
+        error.message
       );
 
-
-      res.status(500).json({
-        message:
-          "حدث خطأ أثناء استيراد التوكيلات",
-
-        error:
-          e.message
-      });
     }
+
   }
-);
 
 
-/* =====================================================
-   SMART GENERAL SEARCH
-===================================================== */
+  await render();
 
-app.get(
-  "/api/search",
-  auth,
-  async (req, res) => {
+}
+
+
+/*
+=====================================================
+GENERAL SEARCH
+=====================================================
+*/
+
+async function searchView() {
+
+  if (!token()) {
+
+    return loginView();
+  }
+
+
+  app.innerHTML =
+    shell(
+      "البحث العام",
+      "البحث في ملفات الحفظ والتوكيلات"
+    );
+
+
+  bindCommon();
+
+
+  const content =
+    document.getElementById(
+      "content"
+    );
+
+
+  content.innerHTML = `
+
+    <div class="toolbar">
+
+      <input
+        id="q"
+        class="search"
+        placeholder="اكتب اسم الموكل أو رقم الملف أو رقم التوكيل"
+      >
+
+
+      <button
+        class="btn"
+        id="go"
+        type="button"
+      >
+        بحث
+      </button>
+
+    </div>
+
+
+    <div class="notice">
+
+      لن تظهر أي بيانات قبل تنفيذ البحث.
+
+    </div>
+
+
+    <div id="results"></div>
+
+  `;
+
+
+  const results =
+    document.getElementById(
+      "results"
+    );
+
+
+  async function go() {
+
+    const query =
+      document
+        .getElementById("q")
+        .value
+        .trim();
+
+
+    if (!query) {
+
+      results.innerHTML = `
+
+        <div class="notice">
+
+          اكتب اسم الموكل أو رقم الملف أو رقم التوكيل للبحث.
+
+        </div>
+
+      `;
+
+      return;
+    }
+
+
+    results.innerHTML = `
+
+      <div class="notice">
+        جاري البحث...
+      </div>
+
+    `;
+
+
     try {
 
-      const q =
-        String(
-          req.query.q || ""
-        ).trim();
-
-
-      if (!q) {
-
-        return res.status(400).json({
-          message:
-            "اكتب اسم الموكل أو جزءًا منه"
-        });
-      }
-
-
-      const normalized =
-        normalizeText(q);
-
-
-      if (!normalized) {
-
-        return res.status(400).json({
-          message:
-            "اكتب كلمة صحيحة للبحث"
-        });
-      }
-
-
-      /* ================================
-         CASES
-      ================================= */
-
-      const caseParams = [];
-
-
-      const caseSearch =
-        buildSmartSearch(
-          normalized,
-          [
-            "file_number",
-            "client_name"
-          ],
-          caseParams
+      const d =
+        await api(
+          `/search?q=${encodeURIComponent(query)}`
         );
 
 
       const cases =
-        await query(
-          `
-          SELECT
-            id,
-            file_number,
-            client_name,
-            created_at
-          FROM cases
-          WHERE ${caseSearch}
-          ORDER BY id DESC
-          LIMIT 200
-          `,
-          caseParams
-        );
-
-
-      /* ================================
-         POWERS
-      ================================= */
-
-      const powerParams = [];
-
-
-      const powerSearch =
-        buildSmartSearch(
-          normalized,
-          [
-            "file_number",
-            "client_name",
-            "power_number",
-            "documentation_authority"
-          ],
-          powerParams
-        );
+        Array.isArray(d.cases)
+          ? d.cases
+          : [];
 
 
       const powers =
-        await query(
-          `
-          SELECT
-            id,
-            file_number,
-            client_name,
-            power_number,
-            documentation_authority,
-            created_at
-          FROM powers
-          WHERE ${powerSearch}
-          ORDER BY id DESC
-          LIMIT 200
-          `,
-          powerParams
-        );
+        Array.isArray(d.powers)
+          ? d.powers
+          : [];
 
 
-      res.json({
+      results.innerHTML = `
 
-        query:
-          q,
+        <div class="search-result">
 
-        normalized,
-
-        cases:
-          cases.rows,
-
-        powers:
-          powers.rows
-
-      });
+          <h3>
+            📁 ملفات الحفظ
+            (${cases.length})
+          </h3>
 
 
-    } catch (e) {
+          ${
+            cases.length
+              ? `
 
-      console.error(e);
+                <div class="table-wrap">
 
-      res.status(500).json({
-        message:
-          "تعذر تنفيذ البحث العام"
-      });
+                  <table>
+
+                    <thead>
+
+                      <tr>
+
+                        <th>
+                          رقم الملف
+                        </th>
+
+                        <th>
+                          اسم الموكل
+                        </th>
+
+                      </tr>
+
+                    </thead>
+
+
+                    <tbody>
+
+                      ${cases.map(
+                        r => `
+
+                          <tr>
+
+                            <td>
+                              ${esc(
+                                r.file_number
+                              )}
+                            </td>
+
+                            <td>
+                              ${esc(
+                                r.client_name
+                              )}
+                            </td>
+
+                          </tr>
+
+                        `
+                      ).join("")}
+
+                    </tbody>
+
+                  </table>
+
+                </div>
+
+              `
+              : `
+
+                <p class="small">
+                  لا توجد ملفات حفظ لهذا البحث.
+                </p>
+
+              `
+          }
+
+        </div>
+
+
+        <div class="search-result">
+
+          <h3>
+            📜 التوكيلات
+            (${powers.length})
+          </h3>
+
+
+          ${
+            powers.length
+              ? `
+
+                <div class="table-wrap">
+
+                  <table>
+
+                    <thead>
+
+                      <tr>
+
+                        <th>
+                          رقم الملف
+                        </th>
+
+                        <th>
+                          اسم الموكل
+                        </th>
+
+                        <th>
+                          رقم التوكيل
+                        </th>
+
+                        <th>
+                          جهة التوثيق
+                        </th>
+
+                      </tr>
+
+                    </thead>
+
+
+                    <tbody>
+
+                      ${powers.map(
+                        r => `
+
+                          <tr>
+
+                            <td>
+                              ${esc(
+                                r.file_number
+                              )}
+                            </td>
+
+                            <td>
+                              ${esc(
+                                r.client_name
+                              )}
+                            </td>
+
+                            <td>
+                              ${esc(
+                                r.power_number
+                              )}
+                            </td>
+
+                            <td>
+                              ${esc(
+                                r.documentation_authority
+                              )}
+                            </td>
+
+                          </tr>
+
+                        `
+                      ).join("")}
+
+                    </tbody>
+
+                  </table>
+
+                </div>
+
+              `
+              : `
+
+                <p class="small">
+                  لا توجد توكيلات لهذا البحث.
+                </p>
+
+              `
+          }
+
+        </div>
+
+      `;
+
+
+    } catch (error) {
+
+      console.error(error);
+
+
+      results.innerHTML = `
+
+        <div class="error">
+
+          ${esc(error.message)}
+
+        </div>
+
+      `;
+
     }
+
   }
-);
 
 
-/* =====================================================
-   CLEAR OLD DATA
-===================================================== */
-
-app.delete(
-  "/api/data/clear",
-  auth,
-  async (req, res) => {
-    try {
-
-      await query(
-        "TRUNCATE TABLE cases, powers RESTART IDENTITY"
-      );
+  document.getElementById(
+    "go"
+  ).onclick =
+    go;
 
 
-      res.json({
-        success: true,
+  document.getElementById(
+    "q"
+  ).onkeydown =
+    function (e) {
 
-        message:
-          "تم حذف جميع ملفات الحفظ والتوكيلات"
-      });
+      if (e.key === "Enter") {
 
+        go();
 
-    } catch (e) {
-
-      console.error(e);
-
-      res.status(500).json({
-        message:
-          "تعذر حذف البيانات القديمة"
-      });
-    }
-  }
-);
-
-
-/* =====================================================
-   HEALTH
-===================================================== */
-
-app.get(
-  "/api/health",
-  async (req, res) => {
-
-    try {
-
-      await query(
-        "SELECT 1"
-      );
-
-
-      res.json({
-        ok: true,
-
-        database:
-          "connected"
-      });
-
-
-    } catch {
-
-      res.status(503).json({
-        ok: false,
-
-        database:
-          "disconnected"
-      });
-    }
-  }
-);
-
-
-/* =====================================================
-   STATIC FRONTEND
-===================================================== */
-
-app.use(
-  express.static(
-    FRONTEND_DIR
-  )
-);
-
-
-app.get(
-  /.*/,
-  (req, res) => {
-
-    res.sendFile(
-      path.join(
-        FRONTEND_DIR,
-        "index.html"
-      )
-    );
-  }
-);
-
-
-/* =====================================================
-   START
-===================================================== */
-
-(async () => {
-
-  try {
-
-    await ensureDatabase();
-
-    await ensureAdmin();
-
-
-    app.listen(
-      PORT,
-      () => {
-
-        console.log(
-          `MIZAN ONLINE running on port ${PORT}`
-        );
-
-        console.log(
-          "Database: PostgreSQL"
-        );
-
-        console.log(
-          "Admin: admin / admin123"
-        );
       }
-    );
+
+    };
+
+}
 
 
-  } catch (e) {
+/*
+=====================================================
+ROUTER
+=====================================================
+*/
 
-    console.error(
-      "STARTUP ERROR:",
-      e
-    );
+function route() {
 
-    process.exit(1);
+  /*
+    أهم حماية:
+    أي Route يتم فتحه بدون Session
+    يذهب مباشرة إلى Login.
+
+    أمثلة:
+
+    /#cases
+    /#powers
+    /#search
+
+    كلها Login بدون Token.
+  */
+
+  if (!token()) {
+
+    return loginView();
+
   }
 
-})();
+
+  const r =
+    (location.hash || "")
+      .replace(/^#/, "");
+
+
+  if (r === "cases") {
+
+    casesView();
+
+  }
+
+  else if (r === "powers") {
+
+    powersView();
+
+  }
+
+  else if (r === "search") {
+
+    searchView();
+
+  }
+
+  else {
+
+    dashboard();
+
+  }
+
+}
+
+
+/*
+=====================================================
+PAGE VISIBILITY / BFCACHE PROTECTION
+=====================================================
+
+لو المتصفح رجّع الصفحة من Back/Forward Cache
+نتأكد أن الصفحة ما تعتمدش على Session قديمة.
+=====================================================
+*/
+
+window.addEventListener(
+  "pageshow",
+  function (event) {
+
+    if (event.persisted) {
+
+      /*
+        الصفحة رجعت من BFCache.
+        نبدأ Session جديدة.
+      */
+
+      clearSession();
+
+      loginView();
+
+    }
+
+  }
+);
+
+
+/*
+=====================================================
+START
+=====================================================
+*/
+
+window.addEventListener(
+  "hashchange",
+  route
+);
+
+
+/*
+  منع بعض حالات الرجوع من الكاش
+  من إظهار Dashboard القديم.
+*/
+
+window.addEventListener(
+  "load",
+  function () {
+
+    /*
+      كل Load جديد = Session جديدة.
+      لأن tokenValue يبدأ أصلًا فارغًا.
+
+      للتأكيد:
+      لا يوجد أي قراءة من localStorage.
+      لا يوجد أي قراءة من sessionStorage.
+    */
+
+    tokenValue = "";
+
+    route();
+
+  }
+);
