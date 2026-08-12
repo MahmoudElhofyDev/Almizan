@@ -26,11 +26,9 @@ function token() {
 ==================================================== */
 
 function esc(value) {
-
   return String(value ?? "").replace(
     /[&<>"']/g,
     function (s) {
-
       return {
         "&": "&amp;",
         "<": "&lt;",
@@ -38,10 +36,8 @@ function esc(value) {
         '"': "&quot;",
         "'": "&#039;"
       }[s];
-
     }
   );
-
 }
 
 
@@ -55,7 +51,6 @@ async function api(url, options = {}) {
     ...(options.headers || {})
   };
 
-
   if (options.body instanceof FormData) {
 
     headers.Authorization =
@@ -68,16 +63,12 @@ async function api(url, options = {}) {
 
     headers.Authorization =
       "Bearer " + token();
-
   }
-
 
   const fullUrl =
     API_BASE + url;
 
-
   let response;
-
 
   try {
 
@@ -96,16 +87,12 @@ async function api(url, options = {}) {
     throw new Error(
       "تعذر الاتصال بالسيرفر. تأكد أن Railway يعمل."
     );
-
   }
-
 
   const text =
     await response.text();
 
-
   let data = {};
-
 
   try {
 
@@ -124,9 +111,7 @@ async function api(url, options = {}) {
     throw new Error(
       "السيرفر لم يرجع JSON. تأكد من أن Backend يعمل على Railway."
     );
-
   }
-
 
   if (!response.ok) {
 
@@ -135,21 +120,16 @@ async function api(url, options = {}) {
       localStorage.removeItem(tokenKey);
 
       loginView();
-
     }
-
 
     throw new Error(
       data.message ||
       data.error ||
       "حدث خطأ في السيرفر"
     );
-
   }
 
-
   return data;
-
 }
 
 
@@ -173,7 +153,6 @@ function loginView() {
           إدارة مكتب المحاماة
         </p>
 
-
         <form id="loginForm">
 
           <label>
@@ -186,7 +165,6 @@ function loginView() {
             required
           >
 
-
           <label>
             كلمة المرور
           </label>
@@ -198,14 +176,12 @@ function loginView() {
             required
           >
 
-
           <button
             class="btn full"
             type="submit"
           >
             تسجيل الدخول
           </button>
-
 
           <div
             id="loginError"
@@ -220,24 +196,18 @@ function loginView() {
 
   `;
 
-
   const form =
     document.getElementById("loginForm");
-
 
   form.onsubmit =
     async function (e) {
 
       e.preventDefault();
 
-
       const errorBox =
         document.getElementById("loginError");
 
-
-      errorBox.textContent =
-        "";
-
+      errorBox.textContent = "";
 
       const username =
         document
@@ -245,12 +215,10 @@ function loginView() {
           .value
           .trim();
 
-
       const password =
         document
           .getElementById("password")
           .value;
-
 
       try {
 
@@ -273,13 +241,10 @@ function loginView() {
             }
           );
 
-
         const text =
           await response.text();
 
-
         let data = {};
-
 
         try {
 
@@ -293,9 +258,7 @@ function loginView() {
           throw new Error(
             "Backend لم يرجع JSON. تأكد أن رابط Railway صحيح ويعمل."
           );
-
         }
-
 
         if (!response.ok) {
 
@@ -304,28 +267,21 @@ function loginView() {
             data.error ||
             "فشل تسجيل الدخول"
           );
-
         }
-
 
         if (!data.token) {
 
           throw new Error(
             "لم يتم استلام Token من السيرفر."
           );
-
         }
-
 
         localStorage.setItem(
           tokenKey,
           data.token
         );
 
-
-        location.hash =
-          "";
-
+        location.hash = "";
 
         route();
 
@@ -333,15 +289,11 @@ function loginView() {
 
         console.error(error);
 
-
         errorBox.textContent =
           error.message ||
           "حدث خطأ أثناء تسجيل الدخول";
-
       }
-
     };
-
 }
 
 
@@ -371,7 +323,6 @@ function shell(title, sub) {
 
           </div>
 
-
           <div class="header-actions">
 
             <button
@@ -380,7 +331,6 @@ function shell(title, sub) {
             >
               ↩ العودة للرئيسية
             </button>
-
 
             <button
               class="btn danger"
@@ -392,7 +342,6 @@ function shell(title, sub) {
           </div>
 
         </div>
-
 
         <div class="card page-card">
 
@@ -409,7 +358,6 @@ function shell(title, sub) {
     </div>
 
   `;
-
 }
 
 
@@ -422,23 +370,18 @@ function bindCommon() {
   const home =
     document.getElementById("home");
 
-
   const logout =
     document.getElementById("logout");
-
 
   if (home) {
 
     home.onclick =
       function () {
 
-        location.hash =
-          "";
+        location.hash = "";
 
       };
-
   }
-
 
   if (logout) {
 
@@ -449,15 +392,11 @@ function bindCommon() {
           tokenKey
         );
 
-        location.hash =
-          "";
+        location.hash = "";
 
         loginView();
-
       };
-
   }
-
 }
 
 
@@ -470,9 +409,7 @@ async function dashboard() {
   if (!token()) {
 
     return loginView();
-
   }
-
 
   app.innerHTML = `
 
@@ -494,7 +431,6 @@ async function dashboard() {
 
           </div>
 
-
           <button
             class="btn danger"
             id="logout"
@@ -504,12 +440,10 @@ async function dashboard() {
 
         </div>
 
-
         <div
           class="grid three"
           id="stats"
         ></div>
-
 
         <div
           class="grid"
@@ -535,7 +469,6 @@ async function dashboard() {
 
           </div>
 
-
           <div class="dashboard-card card">
 
             <h2>
@@ -554,7 +487,6 @@ async function dashboard() {
             </button>
 
           </div>
-
 
           <div class="dashboard-card card">
 
@@ -583,7 +515,6 @@ async function dashboard() {
 
   `;
 
-
   document.getElementById("logout").onclick =
     function () {
 
@@ -594,46 +525,36 @@ async function dashboard() {
       location.hash = "";
 
       loginView();
-
     };
-
 
   document.getElementById("searchPage").onclick =
     function () {
 
-      location.hash =
-        "search";
+      location.hash = "search";
 
     };
-
 
   document.getElementById("casesPage").onclick =
     function () {
 
-      location.hash =
-        "cases";
+      location.hash = "cases";
 
     };
-
 
   document.getElementById("powersPage").onclick =
     function () {
 
-      location.hash =
-        "powers";
+      location.hash = "powers";
 
     };
 
-
   const stats =
     document.getElementById("stats");
-
 
   try {
 
     const d =
       await api("/dashboard");
-
 
     stats.innerHTML = `
 
@@ -649,7 +570,6 @@ async function dashboard() {
 
       </div>
 
-
       <div class="stat card">
 
         <div class="small">
@@ -661,7 +581,6 @@ async function dashboard() {
         </div>
 
       </div>
-
 
       <div class="stat card">
 
@@ -691,9 +610,7 @@ async function dashboard() {
       </div>
 
     `;
-
   }
-
 }
 
 
@@ -706,10 +623,8 @@ function modal(title, fields, onSave) {
   const m =
     document.createElement("div");
 
-
   m.className =
     "modal-back";
-
 
   m.innerHTML = `
 
@@ -730,7 +645,6 @@ function modal(title, fields, onSave) {
         </button>
 
       </div>
-
 
       <form id="mf">
 
@@ -754,14 +668,12 @@ function modal(title, fields, onSave) {
           `
         ).join("")}
 
-
         <button
           class="btn full"
           type="submit"
         >
           حفظ
         </button>
-
 
         <div
           id="me"
@@ -774,9 +686,7 @@ function modal(title, fields, onSave) {
 
   `;
 
-
   document.body.appendChild(m);
-
 
   m.querySelector("#close").onclick =
     function () {
@@ -785,15 +695,12 @@ function modal(title, fields, onSave) {
 
     };
 
-
   m.querySelector("#mf").onsubmit =
     async function (e) {
 
       e.preventDefault();
 
-
       const values = {};
-
 
       fields.forEach(f => {
 
@@ -802,12 +709,10 @@ function modal(title, fields, onSave) {
             "#" + f.id
           );
 
-
         values[f.id] =
           input.value.trim();
 
       });
-
 
       try {
 
@@ -817,15 +722,111 @@ function modal(title, fields, onSave) {
 
       } catch (error) {
 
-        m.querySelector(
-          "#me"
-        ).textContent =
+        m.querySelector("#me").textContent =
           error.message;
-
       }
-
     };
+}
 
+
+/* ====================================================
+   IMPORT EXCEL HELPER
+==================================================== */
+
+function createImportInput(id) {
+
+  const input =
+    document.createElement("input");
+
+  input.type = "file";
+
+  input.id = id;
+
+  input.accept =
+    ".xlsx,.xls,.csv";
+
+  input.style.display =
+    "none";
+
+  document.body.appendChild(input);
+
+  return input;
+}
+
+
+/* ====================================================
+   IMPORT CASES
+==================================================== */
+
+async function importCases(file) {
+
+  if (!file) {
+    return;
+  }
+
+  const formData =
+    new FormData();
+
+  formData.append(
+    "file",
+    file
+  );
+
+  const result =
+    await api(
+      "/import/cases",
+      {
+        method: "POST",
+        body: formData
+      }
+    );
+
+  alert(
+    `تم استيراد ملفات الحفظ بنجاح
+
+إجمالي الصفوف: ${result.total ?? 0}
+تمت الإضافة: ${result.inserted ?? 0}
+البيانات الناقصة: ${result.incomplete ?? 0}
+المكرر: ${result.duplicate ?? 0}`
+  );
+}
+
+
+/* ====================================================
+   IMPORT POWERS
+==================================================== */
+
+async function importPowers(file) {
+
+  if (!file) {
+    return;
+  }
+
+  const formData =
+    new FormData();
+
+  formData.append(
+    "file",
+    file
+  );
+
+  const result =
+    await api(
+      "/import/powers",
+      {
+        method: "POST",
+        body: formData
+      }
+    );
+
+  alert(
+    `تم استيراد التوكيلات بنجاح
+
+إجمالي الصفوف: ${result.total ?? 0}
+تمت الإضافة: ${result.inserted ?? 0}
+البيانات الناقصة: ${result.incomplete ?? 0}
+المكرر: ${result.duplicate ?? 0}`
+  );
 }
 
 
@@ -838,9 +839,7 @@ async function casesView() {
   if (!token()) {
 
     return loginView();
-
   }
-
 
   app.innerHTML =
     shell(
@@ -848,22 +847,16 @@ async function casesView() {
       "إدارة ملفات الحفظ"
     );
 
-
   bindCommon();
-
 
   const content =
     document.getElementById(
       "content"
     );
 
-
   let page = 1;
-
   let q = "";
-
   let incomplete = false;
-
 
   async function render() {
 
@@ -878,14 +871,12 @@ async function casesView() {
           value="${esc(q)}"
         >
 
-
         <button
           class="btn"
           id="search"
         >
           بحث
         </button>
-
 
         <button
           class="btn secondary"
@@ -894,6 +885,14 @@ async function casesView() {
           البيانات الناقصة
         </button>
 
+        <!-- زر الاستيراد -->
+        <button
+          class="btn"
+          id="importCases"
+          type="button"
+        >
+          📥 استيراد Excel
+        </button>
 
         <button
           class="btn success"
@@ -904,17 +903,27 @@ async function casesView() {
 
       </div>
 
+      <input
+        type="file"
+        id="casesFileInput"
+        accept=".xlsx,.xls,.csv"
+        style="display:none"
+      >
 
       <div class="notice">
 
         البيانات مخفية افتراضيًا.
         لن تظهر إلا بعد البحث أو اختيار البيانات الناقصة.
 
+        <br>
+
+        <span class="small">
+          الاستيراد يقبل ملفات Excel بصيغ XLSX / XLS / CSV.
+        </span>
+
       </div>
 
-
       <div id="table"></div>
-
 
       <div
         id="pages"
@@ -923,6 +932,66 @@ async function casesView() {
 
     `;
 
+    const importButton =
+      document.getElementById(
+        "importCases"
+      );
+
+    const fileInput =
+      document.getElementById(
+        "casesFileInput"
+      );
+
+    importButton.onclick =
+      function () {
+
+        fileInput.click();
+
+      };
+
+    fileInput.onchange =
+      async function () {
+
+        const file =
+          fileInput.files[0];
+
+        if (!file) {
+          return;
+        }
+
+        importButton.disabled =
+          true;
+
+        importButton.textContent =
+          "⏳ جاري الاستيراد...";
+
+        try {
+
+          await importCases(file);
+
+          q = "";
+          incomplete = false;
+          page = 1;
+
+          await load();
+
+        } catch (error) {
+
+          alert(
+            error.message
+          );
+
+        } finally {
+
+          importButton.disabled =
+            false;
+
+          importButton.textContent =
+            "📥 استيراد Excel";
+
+          fileInput.value = "";
+        }
+      };
 
     document.getElementById(
       "search"
@@ -935,18 +1004,11 @@ async function casesView() {
             .value
             .trim();
 
-
-        incomplete =
-          false;
-
-
+        incomplete = false;
         page = 1;
 
-
         load();
-
       };
-
 
     document.getElementById(
       "inc"
@@ -954,24 +1016,18 @@ async function casesView() {
       function () {
 
         q = "";
-
         incomplete = true;
-
         page = 1;
 
         load();
-
       };
-
 
     document.getElementById(
       "add"
     ).onclick =
       add;
 
-
     await load();
-
   }
 
 
@@ -984,12 +1040,10 @@ async function casesView() {
           `/cases?q=${encodeURIComponent(q)}&incomplete=${incomplete ? 1 : 0}&page=${page}&limit=50`
         );
 
-
       const table =
         document.getElementById(
           "table"
         );
-
 
       if (
         !d.data ||
@@ -997,12 +1051,11 @@ async function casesView() {
         !d.data.length
       ) {
 
-        table.innerHTML =
-          `
-            <div class="notice">
-              لا توجد نتائج.
-            </div>
-          `;
+        table.innerHTML = `
+          <div class="notice">
+            لا توجد نتائج.
+          </div>
+        `;
 
       } else {
 
@@ -1032,7 +1085,6 @@ async function casesView() {
 
               </thead>
 
-
               <tbody>
 
                 ${d.data.map(
@@ -1057,7 +1109,6 @@ async function casesView() {
                           تعديل
                         </button>
 
-
                         <button
                           class="btn danger d"
                           data-id="${esc(r.id)}"
@@ -1079,9 +1130,7 @@ async function casesView() {
           </div>
 
         `;
-
       }
-
 
       table
         .querySelectorAll(".e")
@@ -1099,17 +1148,11 @@ async function casesView() {
                     )
                 );
 
-
               if (row) {
-
                 edit(row);
-
               }
-
             };
-
         });
-
 
       table
         .querySelectorAll(".d")
@@ -1123,15 +1166,12 @@ async function casesView() {
               );
 
             };
-
         });
-
 
       const pages =
         document.getElementById(
           "pages"
         );
-
 
       const p =
         d.pagination || {
@@ -1139,7 +1179,6 @@ async function casesView() {
           pages: 1,
           total: 0
         };
-
 
       pages.innerHTML = `
 
@@ -1151,12 +1190,10 @@ async function casesView() {
           السابق
         </button>
 
-
         <span>
           صفحة ${p.page} من ${p.pages}
           — ${p.total} سجل
         </span>
-
 
         <button
           class="btn secondary"
@@ -1168,7 +1205,6 @@ async function casesView() {
 
       `;
 
-
       document.getElementById(
         "pr"
       ).onclick =
@@ -1177,13 +1213,10 @@ async function casesView() {
           if (page > 1) {
 
             page--;
-
             load();
 
           }
-
         };
-
 
       document.getElementById(
         "nx"
@@ -1193,11 +1226,9 @@ async function casesView() {
           if (page < p.pages) {
 
             page++;
-
             load();
 
           }
-
         };
 
     } catch (error) {
@@ -1207,23 +1238,17 @@ async function casesView() {
           "table"
         );
 
-
       if (table) {
 
         table.innerHTML = `
 
           <div class="error">
-
             ${esc(error.message)}
-
           </div>
 
         `;
-
       }
-
     }
-
   }
 
 
@@ -1236,9 +1261,9 @@ async function casesView() {
           "/cases/last-file"
         );
 
-
       modal(
         "إضافة ملف حفظ",
+
         [
           {
             id: "file_number",
@@ -1269,20 +1294,13 @@ async function casesView() {
             }
           );
 
-
           q =
             values.file_number;
 
-
-          incomplete =
-            false;
-
-
+          incomplete = false;
           page = 1;
 
-
           await load();
-
         }
       );
 
@@ -1291,9 +1309,7 @@ async function casesView() {
       alert(
         error.message
       );
-
     }
-
   }
 
 
@@ -1301,6 +1317,7 @@ async function casesView() {
 
     modal(
       "تعديل ملف الحفظ",
+
       [
         {
           id: "file_number",
@@ -1331,12 +1348,9 @@ async function casesView() {
           }
         );
 
-
         await load();
-
       }
     );
-
   }
 
 
@@ -1347,11 +1361,8 @@ async function casesView() {
         "هل تريد حذف هذا الملف؟"
       )
     ) {
-
       return;
-
     }
-
 
     try {
 
@@ -1362,7 +1373,6 @@ async function casesView() {
         }
       );
 
-
       await load();
 
     } catch (error) {
@@ -1370,14 +1380,11 @@ async function casesView() {
       alert(
         error.message
       );
-
     }
-
   }
 
 
   await render();
-
 }
 
 
@@ -1390,9 +1397,7 @@ async function powersView() {
   if (!token()) {
 
     return loginView();
-
   }
-
 
   app.innerHTML =
     shell(
@@ -1400,22 +1405,16 @@ async function powersView() {
       "إدارة ملفات التوكيلات"
     );
 
-
   bindCommon();
-
 
   const content =
     document.getElementById(
       "content"
     );
 
-
   let page = 1;
-
   let q = "";
-
   let incomplete = false;
-
 
   async function render() {
 
@@ -1430,14 +1429,12 @@ async function powersView() {
           value="${esc(q)}"
         >
 
-
         <button
           class="btn"
           id="search"
         >
           بحث
         </button>
-
 
         <button
           class="btn secondary"
@@ -1446,6 +1443,14 @@ async function powersView() {
           البيانات الناقصة
         </button>
 
+        <!-- زر الاستيراد -->
+        <button
+          class="btn"
+          id="importPowers"
+          type="button"
+        >
+          📥 استيراد Excel
+        </button>
 
         <button
           class="btn success"
@@ -1456,17 +1461,27 @@ async function powersView() {
 
       </div>
 
+      <input
+        type="file"
+        id="powersFileInput"
+        accept=".xlsx,.xls,.csv"
+        style="display:none"
+      >
 
       <div class="notice">
 
         البيانات مخفية افتراضيًا.
         لن تظهر إلا بعد البحث أو اختيار البيانات الناقصة.
 
+        <br>
+
+        <span class="small">
+          الاستيراد يقبل XLSX / XLS / CSV ويقرأ جهة التوثيق أيضًا.
+        </span>
+
       </div>
 
-
       <div id="table"></div>
-
 
       <div
         id="pages"
@@ -1475,6 +1490,66 @@ async function powersView() {
 
     `;
 
+    const importButton =
+      document.getElementById(
+        "importPowers"
+      );
+
+    const fileInput =
+      document.getElementById(
+        "powersFileInput"
+      );
+
+    importButton.onclick =
+      function () {
+
+        fileInput.click();
+
+      };
+
+    fileInput.onchange =
+      async function () {
+
+        const file =
+          fileInput.files[0];
+
+        if (!file) {
+          return;
+        }
+
+        importButton.disabled =
+          true;
+
+        importButton.textContent =
+          "⏳ جاري الاستيراد...";
+
+        try {
+
+          await importPowers(file);
+
+          q = "";
+          incomplete = false;
+          page = 1;
+
+          await load();
+
+        } catch (error) {
+
+          alert(
+            error.message
+          );
+
+        } finally {
+
+          importButton.disabled =
+            false;
+
+          importButton.textContent =
+            "📥 استيراد Excel";
+
+          fileInput.value = "";
+        }
+      };
 
     document.getElementById(
       "search"
@@ -1487,18 +1562,11 @@ async function powersView() {
             .value
             .trim();
 
-
-        incomplete =
-          false;
-
-
+        incomplete = false;
         page = 1;
 
-
         load();
-
       };
-
 
     document.getElementById(
       "inc"
@@ -1506,24 +1574,18 @@ async function powersView() {
       function () {
 
         q = "";
-
         incomplete = true;
-
         page = 1;
 
         load();
-
       };
-
 
     document.getElementById(
       "add"
     ).onclick =
       add;
 
-
     await load();
-
   }
 
 
@@ -1536,12 +1598,10 @@ async function powersView() {
           `/powers?q=${encodeURIComponent(q)}&incomplete=${incomplete ? 1 : 0}&page=${page}&limit=50`
         );
 
-
       const table =
         document.getElementById(
           "table"
         );
-
 
       if (
         !d.data ||
@@ -1549,12 +1609,11 @@ async function powersView() {
         !d.data.length
       ) {
 
-        table.innerHTML =
-          `
-            <div class="notice">
-              لا توجد نتائج.
-            </div>
-          `;
+        table.innerHTML = `
+          <div class="notice">
+            لا توجد نتائج.
+          </div>
+        `;
 
       } else {
 
@@ -1592,7 +1651,6 @@ async function powersView() {
 
               </thead>
 
-
               <tbody>
 
                 ${d.data.map(
@@ -1627,7 +1685,6 @@ async function powersView() {
                           تعديل
                         </button>
 
-
                         <button
                           class="btn danger d"
                           data-id="${esc(r.id)}"
@@ -1649,9 +1706,7 @@ async function powersView() {
           </div>
 
         `;
-
       }
-
 
       table
         .querySelectorAll(".e")
@@ -1669,17 +1724,11 @@ async function powersView() {
                     )
                 );
 
-
               if (row) {
-
                 edit(row);
-
               }
-
             };
-
         });
-
 
       table
         .querySelectorAll(".d")
@@ -1693,15 +1742,12 @@ async function powersView() {
               );
 
             };
-
         });
-
 
       const pages =
         document.getElementById(
           "pages"
         );
-
 
       const p =
         d.pagination || {
@@ -1709,7 +1755,6 @@ async function powersView() {
           pages: 1,
           total: 0
         };
-
 
       pages.innerHTML = `
 
@@ -1721,12 +1766,10 @@ async function powersView() {
           السابق
         </button>
 
-
         <span>
           صفحة ${p.page} من ${p.pages}
           — ${p.total} سجل
         </span>
-
 
         <button
           class="btn secondary"
@@ -1738,7 +1781,6 @@ async function powersView() {
 
       `;
 
-
       document.getElementById(
         "pr"
       ).onclick =
@@ -1747,13 +1789,10 @@ async function powersView() {
           if (page > 1) {
 
             page--;
-
             load();
 
           }
-
         };
-
 
       document.getElementById(
         "nx"
@@ -1763,11 +1802,9 @@ async function powersView() {
           if (page < p.pages) {
 
             page++;
-
             load();
 
           }
-
         };
 
     } catch (error) {
@@ -1777,23 +1814,17 @@ async function powersView() {
           "table"
         );
 
-
       if (table) {
 
         table.innerHTML = `
 
           <div class="error">
-
             ${esc(error.message)}
-
           </div>
 
         `;
-
       }
-
     }
-
   }
 
 
@@ -1805,7 +1836,6 @@ async function powersView() {
         await api(
           "/powers/last-file"
         );
-
 
       modal(
         "إضافة توكيل",
@@ -1850,20 +1880,13 @@ async function powersView() {
             }
           );
 
-
           q =
             values.power_number;
 
-
-          incomplete =
-            false;
-
-
+          incomplete = false;
           page = 1;
 
-
           await load();
-
         }
       );
 
@@ -1872,9 +1895,7 @@ async function powersView() {
       alert(
         error.message
       );
-
     }
-
   }
 
 
@@ -1927,12 +1948,9 @@ async function powersView() {
           }
         );
 
-
         await load();
-
       }
     );
-
   }
 
 
@@ -1943,11 +1961,8 @@ async function powersView() {
         "هل تريد حذف هذا التوكيل؟"
       )
     ) {
-
       return;
-
     }
-
 
     try {
 
@@ -1958,7 +1973,6 @@ async function powersView() {
         }
       );
 
-
       await load();
 
     } catch (error) {
@@ -1966,14 +1980,11 @@ async function powersView() {
       alert(
         error.message
       );
-
     }
-
   }
 
 
   await render();
-
 }
 
 
@@ -1986,9 +1997,7 @@ async function searchView() {
   if (!token()) {
 
     return loginView();
-
   }
-
 
   app.innerHTML =
     shell(
@@ -1996,15 +2005,12 @@ async function searchView() {
       "البحث في ملفات الحفظ والتوكيلات"
     );
 
-
   bindCommon();
-
 
   const content =
     document.getElementById(
       "content"
     );
-
 
   content.innerHTML = `
 
@@ -2016,7 +2022,6 @@ async function searchView() {
         placeholder="اكتب اسم الموكل أو رقم الملف أو رقم التوكيل"
       >
 
-
       <button
         class="btn"
         id="go"
@@ -2026,24 +2031,20 @@ async function searchView() {
 
     </div>
 
-
     <div class="notice">
 
       لن تظهر أي بيانات قبل تنفيذ البحث.
 
     </div>
 
-
     <div id="results"></div>
 
   `;
-
 
   const results =
     document.getElementById(
       "results"
     );
-
 
   async function go() {
 
@@ -2052,7 +2053,6 @@ async function searchView() {
         .getElementById("q")
         .value
         .trim();
-
 
     if (!query) {
 
@@ -2067,9 +2067,7 @@ async function searchView() {
       `;
 
       return;
-
     }
-
 
     results.innerHTML = `
 
@@ -2079,7 +2077,6 @@ async function searchView() {
 
     `;
 
-
     try {
 
       const d =
@@ -2087,18 +2084,15 @@ async function searchView() {
           `/search?q=${encodeURIComponent(query)}`
         );
 
-
       const cases =
         Array.isArray(d.cases)
           ? d.cases
           : [];
 
-
       const powers =
         Array.isArray(d.powers)
           ? d.powers
           : [];
-
 
       results.innerHTML = `
 
@@ -2109,10 +2103,8 @@ async function searchView() {
             (${cases.length})
           </h3>
 
-
           ${
             cases.length
-
               ? `
 
                 <div class="table-wrap">
@@ -2134,7 +2126,6 @@ async function searchView() {
                       </tr>
 
                     </thead>
-
 
                     <tbody>
 
@@ -2167,7 +2158,6 @@ async function searchView() {
                 </div>
 
               `
-
               : `
 
                 <p class="small">
@@ -2179,7 +2169,6 @@ async function searchView() {
 
         </div>
 
-
         <div class="search-result">
 
           <h3>
@@ -2187,10 +2176,8 @@ async function searchView() {
             (${powers.length})
           </h3>
 
-
           ${
             powers.length
-
               ? `
 
                 <div class="table-wrap">
@@ -2220,7 +2207,6 @@ async function searchView() {
                       </tr>
 
                     </thead>
-
 
                     <tbody>
 
@@ -2265,7 +2251,6 @@ async function searchView() {
                 </div>
 
               `
-
               : `
 
                 <p class="small">
@@ -2283,7 +2268,6 @@ async function searchView() {
 
       console.error(error);
 
-
       results.innerHTML = `
 
         <div class="error">
@@ -2293,17 +2277,13 @@ async function searchView() {
         </div>
 
       `;
-
     }
-
   }
-
 
   document.getElementById(
     "go"
   ).onclick =
     go;
-
 
   document.getElementById(
     "q"
@@ -2315,9 +2295,7 @@ async function searchView() {
         go();
 
       }
-
     };
-
 }
 
 
@@ -2330,14 +2308,11 @@ function route() {
   if (!token()) {
 
     return loginView();
-
   }
-
 
   const r =
     (location.hash || "")
       .replace("#", "");
-
 
   if (r === "cases") {
 
@@ -2362,7 +2337,6 @@ function route() {
     dashboard();
 
   }
-
 }
 
 
@@ -2374,6 +2348,5 @@ window.addEventListener(
   "hashchange",
   route
 );
-
 
 route();
