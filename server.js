@@ -77,13 +77,11 @@ function normalizeText(value) {
     .toLowerCase()
     .trim();
 
-  // إزالة التشكيل
   text = text.replace(
     /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/g,
     ""
   );
 
-  // توحيد الحروف العربية
   text = text
     .replace(/[أإآٱ]/g, "ا")
     .replace(/ى/g, "ي")
@@ -91,10 +89,8 @@ function normalizeText(value) {
     .replace(/ؤ/g, "و")
     .replace(/ئ/g, "ي");
 
-  // إزالة التطويل
   text = text.replace(/ـ/g, "");
 
-  // توحيد المسافات
   text = text.replace(/\s+/g, " ");
 
   return text.trim();
@@ -135,7 +131,7 @@ function pick(row, keys) {
       const value =
         String(row[normalized] ?? "").trim();
 
-      if (value) {
+      if (value !== "") {
         return value;
       }
     }
@@ -145,22 +141,25 @@ function pick(row, keys) {
 }
 
 
-function anyValue(row) {
-  return Object.values(row).some(
-    value =>
-      String(value ?? "").trim() !== ""
-  );
-}
+/*
+   مهم:
+   في الاستيراد لا نستخدم anyValue
+   ولا نعمل skip لأي صف بسبب نقص البيانات.
+*/
 
 
 function caseFile(row) {
   return pick(row, [
     "رقم_الملف",
     "رقم الملف",
+    "رقم الملف ",
     "م",
+    "رقم",
     "file_number",
     "filenumber",
-    "file number"
+    "file number",
+    "file no",
+    "file_no"
   ]);
 }
 
@@ -170,9 +169,12 @@ function client(row) {
     "اسم_الموكل",
     "اسم الموكل",
     "اسم الموكل ",
+    "اسم العميل",
+    "اسم_العميل",
     "client_name",
     "clientname",
-    "client name"
+    "client name",
+    "client"
   ]);
 }
 
@@ -181,9 +183,15 @@ function powerNumber(row) {
   return pick(row, [
     "رقم_التوكيل",
     "رقم التوكيل",
+    "رقم التوكيل ",
+    "رقم الوكالة",
+    "رقم_الوكالة",
     "power_number",
     "powernumber",
-    "power number"
+    "power number",
+    "power_no",
+    "power no",
+    "power"
   ]);
 }
 
@@ -192,11 +200,24 @@ function authority(row) {
   return pick(row, [
     "جهة_إصدار",
     "جهة إصدار",
+    "جهة إصدار ",
     "جهة_التوثيق",
     "جهة التوثيق",
-    "documentation_authority",
+    "جهة التوثيق ",
+    "جهه التوثيق",
+    "جهه_التوثيق",
+    "جهة التوثيق / الإصدار",
+    "جهة التوثيق/الإصدار",
+    "جهة التوثيق والاصدار",
+    "جهة التوثيق والاصدار ",
+    "التوثيق",
+    "جهة",
     "authority",
-    "documentation authority"
+    "documentation_authority",
+    "documentation authority",
+    "documentation",
+    "issuing_authority",
+    "issuing authority"
   ]);
 }
 
@@ -222,6 +243,7 @@ function auth(req, res, next) {
     );
 
     next();
+
   } catch {
     return res.status(401).json({
       message:
@@ -856,6 +878,7 @@ app.delete(
 
 /* =====================================================
    IMPORT CASES
+   يستورد كل الصفوف بدون تخطي
 ===================================================== */
 
 app.post(
@@ -864,6 +887,7 @@ app.post(
   upload.single("file"),
   async (req, res) => {
     try {
+
       if (!req.file) {
         return res.status(400).json({
           message:
@@ -871,13 +895,16 @@ app.post(
         });
       }
 
+
       const workbook =
         XLSX.read(
           req.file.buffer,
           {
-            type: "buffer"
+            type: "buffer",
+            cellDates: false
           }
         );
+
 
       if (!workbook.SheetNames.length) {
         return res.status(400).json({
@@ -886,118 +913,57 @@ app.post(
         });
       }
 
+
       const sheet =
         workbook.Sheets[
           workbook.SheetNames[0]
         ];
 
+
+      /*
+        raw:false
+        حتى نحصل على القيمة الظاهرة في Excel
+        ونحافظ قدر الإمكان على تنسيق الأرقام.
+      */
+
       const rows =
         XLSX.utils.sheet_to_json(
           sheet,
           {
-            defval: ""
+            defval: "",
+            raw: false
           }
         );
 
-      let inserted = 0;
-      let skipped = 0;
-      let duplicate = 0;
-      let incomplete = 0;
 
-      // منع التكرار داخل نفس ملف Excel
-      const importedFileNumbers =
-        new Set();
+      let inserted = 0;
+
+
+      /*
+        مهم جدًا:
+        لا يوجد هنا:
+        - duplicate check
+        - skip
+        - incomplete skip
+        - Set
+        - مقارنة مع قاعدة البيانات
+
+        كل صف يتم إدخاله كما هو.
+      */
 
       for (const raw of rows) {
+
         const row =
           normalizeRow(raw);
 
-        if (!anyValue(row)) {
-          skipped++;
-          continue;
-        }
 
         const fileNumber =
           caseFile(row);
 
+
         const clientName =
           client(row);
 
-        if (
-          !fileNumber ||
-          !clientName
-        ) {
-          incomplete++;
-        }
-
-        if (fileNumber) {
-          const normalizedFile =
-            normalizeText(
-              fileNumber
-            ).replace(/\s+/g, "");
-
-          if (
-            importedFileNumbers.has(
-              normalizedFile
-            )
-          ) {
-            duplicate++;
-            continue;
-          }
-
-          importedFileNumbers.add(
-            normalizedFile
-          );
-
-          const dup =
-            await query(
-              `
-              SELECT id
-              FROM cases
-              WHERE
-                regexp_replace(
-                  regexp_replace(
-                    regexp_replace(
-                      lower(trim(file_number)),
-                      '[أإآٱ]',
-                      'ا',
-                      'g'
-                    ),
-                    'ى',
-                    'ي',
-                    'g'
-                  ),
-                  '[^[:alnum:]ء-ي]+',
-                  '',
-                  'g'
-                )
-                =
-                regexp_replace(
-                  regexp_replace(
-                    regexp_replace(
-                      lower(trim($1)),
-                      '[أإآٱ]',
-                      'ا',
-                      'g'
-                    ),
-                    'ى',
-                    'ي',
-                    'g'
-                  ),
-                  '[^[:alnum:]ء-ي]+',
-                  '',
-                  'g'
-                )
-              LIMIT 1
-              `,
-              [fileNumber]
-            );
-
-          if (dup.rowCount) {
-            duplicate++;
-            continue;
-          }
-        }
 
         await query(
           `
@@ -1013,24 +979,33 @@ app.post(
           ]
         );
 
+
         inserted++;
       }
+
 
       res.json({
         success: true,
         total: rows.length,
         inserted,
-        skipped,
-        duplicate,
-        incomplete
+        skipped: 0,
+        duplicate: 0,
+        incomplete: 0
       });
 
+
     } catch (e) {
-      console.error(e);
+
+      console.error(
+        "IMPORT CASES ERROR:",
+        e
+      );
 
       res.status(500).json({
         message:
-          "حدث خطأ أثناء استيراد ملفات الحفظ"
+          "حدث خطأ أثناء استيراد ملفات الحفظ",
+        error:
+          e.message
       });
     }
   }
@@ -1046,15 +1021,18 @@ app.get(
   auth,
   async (req, res) => {
     try {
+
       const q =
         String(
           req.query.q || ""
         ).trim();
 
+
       const incomplete =
         String(
           req.query.incomplete || "0"
         ) === "1";
+
 
       if (!q && !incomplete) {
         return res.json({
@@ -1068,10 +1046,13 @@ app.get(
         });
       }
 
+
       const conditions = [];
       const params = [];
 
+
       if (q) {
+
         const search =
           buildSmartSearch(
             q,
@@ -1084,12 +1065,15 @@ app.get(
             params
           );
 
+
         if (search) {
           conditions.push(search);
         }
       }
 
+
       if (incomplete) {
+
         conditions.push(`
           (
             btrim(file_number)='' OR
@@ -1100,10 +1084,12 @@ app.get(
         `);
       }
 
+
       const where =
         conditions.length
           ? `WHERE ${conditions.join(" AND ")}`
           : "";
+
 
       const count =
         await query(
@@ -1115,14 +1101,17 @@ app.get(
           params
         );
 
+
       const total =
         count.rows[0].count;
+
 
       const pg =
         pagination(
           req,
           total
         );
+
 
       const data =
         await query(
@@ -1148,6 +1137,7 @@ app.get(
           ]
         );
 
+
       res.json({
         data: data.rows,
 
@@ -1159,7 +1149,9 @@ app.get(
         }
       });
 
+
     } catch (e) {
+
       console.error(e);
 
       res.status(500).json({
@@ -1180,6 +1172,7 @@ app.get(
   auth,
   async (req, res) => {
     try {
+
       const r =
         await query(`
           SELECT
@@ -1203,17 +1196,22 @@ app.get(
           FROM powers
         `);
 
+
       const last =
         Number(
           r.rows[0].last || 2431
         );
 
+
       res.json({
         last,
-        next: last + 1
+        next:
+          last + 1
       });
 
+
     } catch (e) {
+
       console.error(e);
 
       res.status(500).json({
@@ -1234,27 +1232,38 @@ app.post(
   auth,
   async (req, res) => {
     try {
+
       const fileNumber =
         String(
           req.body.file_number ?? ""
         ).trim();
+
 
       const clientName =
         String(
           req.body.client_name ?? ""
         ).trim();
 
+
       const powerNumber =
         String(
           req.body.power_number ?? ""
         ).trim();
+
 
       const documentationAuthority =
         String(
           req.body.documentation_authority ?? ""
         ).trim();
 
+
+      /*
+        الإضافة اليدوية فقط تمنع تكرار رقم التوكيل.
+        الاستيراد لا يستخدم هذا الشرط.
+      */
+
       if (powerNumber) {
+
         const duplicate =
           await query(
             `
@@ -1269,13 +1278,16 @@ app.post(
             [powerNumber]
           );
 
+
         if (duplicate.rowCount) {
+
           return res.status(409).json({
             message:
               "رقم التوكيل موجود بالفعل ولا يمكن تكراره."
           });
         }
       }
+
 
       const r =
         await query(
@@ -1304,11 +1316,14 @@ app.post(
           ]
         );
 
+
       res.status(201).json(
         r.rows[0]
       );
 
+
     } catch (e) {
+
       console.error(e);
 
       res.status(500).json({
@@ -1329,30 +1344,37 @@ app.put(
   auth,
   async (req, res) => {
     try {
+
       const id =
         Number(req.params.id);
+
 
       const fileNumber =
         String(
           req.body.file_number ?? ""
         ).trim();
 
+
       const clientName =
         String(
           req.body.client_name ?? ""
         ).trim();
+
 
       const powerNumber =
         String(
           req.body.power_number ?? ""
         ).trim();
 
+
       const documentationAuthority =
         String(
           req.body.documentation_authority ?? ""
         ).trim();
 
+
       if (powerNumber) {
+
         const duplicate =
           await query(
             `
@@ -1371,13 +1393,16 @@ app.put(
             ]
           );
 
+
         if (duplicate.rowCount) {
+
           return res.status(409).json({
             message:
               "رقم التوكيل موجود بالفعل في سجل آخر."
           });
         }
       }
+
 
       const r =
         await query(
@@ -1408,18 +1433,23 @@ app.put(
           ]
         );
 
+
       if (!r.rowCount) {
+
         return res.status(404).json({
           message:
             "التوكيل غير موجود"
         });
       }
 
+
       res.json(
         r.rows[0]
       );
 
+
     } catch (e) {
+
       console.error(e);
 
       res.status(500).json({
@@ -1440,6 +1470,7 @@ app.delete(
   auth,
   async (req, res) => {
     try {
+
       const r =
         await query(
           "DELETE FROM powers WHERE id=$1",
@@ -1450,18 +1481,23 @@ app.delete(
           ]
         );
 
+
       if (!r.rowCount) {
+
         return res.status(404).json({
           message:
             "التوكيل غير موجود"
         });
       }
 
+
       res.json({
         success: true
       });
 
+
     } catch (e) {
+
       console.error(e);
 
       res.status(500).json({
@@ -1475,6 +1511,8 @@ app.delete(
 
 /* =====================================================
    IMPORT POWERS
+   يستورد كل الصفوف
+   ويستورد جهة التوثيق
 ===================================================== */
 
 app.post(
@@ -1482,122 +1520,125 @@ app.post(
   auth,
   upload.single("file"),
   async (req, res) => {
+
     try {
+
       if (!req.file) {
+
         return res.status(400).json({
           message:
             "لم يتم اختيار ملف"
         });
       }
 
+
       const workbook =
         XLSX.read(
           req.file.buffer,
           {
-            type: "buffer"
+            type: "buffer",
+            cellDates: false
           }
         );
 
+
       if (!workbook.SheetNames.length) {
+
         return res.status(400).json({
           message:
             "ملف Excel فارغ"
         });
       }
 
+
       const sheet =
         workbook.Sheets[
           workbook.SheetNames[0]
         ];
 
+
+      /*
+        raw:false
+        للحفاظ على القيم الظاهرة في Excel.
+      */
+
       const rows =
         XLSX.utils.sheet_to_json(
           sheet,
           {
-            defval: ""
+            defval: "",
+            raw: false
           }
         );
 
-      let inserted = 0;
-      let skipped = 0;
-      let duplicate = 0;
-      let incomplete = 0;
 
-      // منع التكرار داخل نفس Excel
-      const importedPowerNumbers =
-        new Set();
+      let inserted = 0;
+
+
+      /*
+        =================================================
+        مهم جدًا
+        =================================================
+
+        هنا تم حذف كل الآتي:
+
+        ❌ duplicate check
+        ❌ importedPowerNumbers
+        ❌ SELECT duplicate
+        ❌ incomplete skip
+        ❌ skipped
+        ❌ continue
+
+        وبالتالي:
+        كل صف في Excel يدخل قاعدة البيانات.
+      */
+
 
       for (const raw of rows) {
+
         const row =
           normalizeRow(raw);
 
-        if (!anyValue(row)) {
-          skipped++;
-          continue;
-        }
+
+        /*
+          استخراج البيانات
+        */
 
         const fileNumber =
           caseFile(row);
 
+
         const clientName =
           client(row);
+
 
         const powerNum =
           powerNumber(row);
 
+
+        /*
+          استخراج جهة التوثيق
+          مهما كان اسم العمود من الأسماء المدعومة.
+        */
+
         const authName =
           authority(row);
 
-        if (
-          !fileNumber ||
-          !clientName ||
-          !powerNum ||
-          !authName
-        ) {
-          incomplete++;
-        }
 
-        if (powerNum) {
-          const normalizedPower =
-            normalizeText(
-              powerNum
-            ).replace(
-              /\s+/g,
-              ""
-            );
-
-          if (
-            importedPowerNumbers.has(
-              normalizedPower
-            )
-          ) {
-            duplicate++;
-            continue;
+        console.log(
+          "IMPORT POWER:",
+          {
+            fileNumber,
+            clientName,
+            powerNum,
+            authName
           }
+        );
 
-          importedPowerNumbers.add(
-            normalizedPower
-          );
 
-          const dup =
-            await query(
-              `
-              SELECT id
-              FROM powers
-              WHERE
-                lower(trim(power_number))
-                =
-                lower(trim($1))
-              LIMIT 1
-              `,
-              [powerNum]
-            );
-
-          if (dup.rowCount) {
-            duplicate++;
-            continue;
-          }
-        }
+        /*
+          لا يوجد أي شرط يمنع الإدخال.
+        */
 
         await query(
           `
@@ -1617,24 +1658,44 @@ app.post(
           ]
         );
 
+
         inserted++;
       }
 
+
       res.json({
         success: true,
-        total: rows.length,
+
+        total:
+          rows.length,
+
         inserted,
-        skipped,
-        duplicate,
-        incomplete
+
+        skipped:
+          0,
+
+        duplicate:
+          0,
+
+        incomplete:
+          0
       });
 
+
     } catch (e) {
-      console.error(e);
+
+      console.error(
+        "IMPORT POWERS ERROR:",
+        e
+      );
+
 
       res.status(500).json({
         message:
-          "حدث خطأ أثناء استيراد التوكيلات"
+          "حدث خطأ أثناء استيراد التوكيلات",
+
+        error:
+          e.message
       });
     }
   }
@@ -1650,33 +1711,41 @@ app.get(
   auth,
   async (req, res) => {
     try {
+
       const q =
         String(
           req.query.q || ""
         ).trim();
 
+
       if (!q) {
+
         return res.status(400).json({
           message:
             "اكتب اسم الموكل أو جزءًا منه"
         });
       }
 
+
       const normalized =
         normalizeText(q);
 
+
       if (!normalized) {
+
         return res.status(400).json({
           message:
             "اكتب كلمة صحيحة للبحث"
         });
       }
 
+
       /* ================================
          CASES
       ================================= */
 
       const caseParams = [];
+
 
       const caseSearch =
         buildSmartSearch(
@@ -1687,6 +1756,7 @@ app.get(
           ],
           caseParams
         );
+
 
       const cases =
         await query(
@@ -1704,11 +1774,13 @@ app.get(
           caseParams
         );
 
+
       /* ================================
          POWERS
       ================================= */
 
       const powerParams = [];
+
 
       const powerSearch =
         buildSmartSearch(
@@ -1721,6 +1793,7 @@ app.get(
           ],
           powerParams
         );
+
 
       const powers =
         await query(
@@ -1740,8 +1813,12 @@ app.get(
           powerParams
         );
 
+
       res.json({
-        query: q,
+
+        query:
+          q,
+
         normalized,
 
         cases:
@@ -1749,9 +1826,12 @@ app.get(
 
         powers:
           powers.rows
+
       });
 
+
     } catch (e) {
+
       console.error(e);
 
       res.status(500).json({
@@ -1767,30 +1847,27 @@ app.get(
    CLEAR OLD DATA
 ===================================================== */
 
-/*
-  API اختيارية لمسح البيانات القديمة.
-  محمية بتسجيل الدخول.
-
-  استخدمها فقط لو محتاج تمسح كل
-  ملفات الحفظ والتوكيلات.
-*/
-
 app.delete(
   "/api/data/clear",
   auth,
   async (req, res) => {
     try {
+
       await query(
         "TRUNCATE TABLE cases, powers RESTART IDENTITY"
       );
 
+
       res.json({
         success: true,
+
         message:
           "تم حذف جميع ملفات الحفظ والتوكيلات"
       });
 
+
     } catch (e) {
+
       console.error(e);
 
       res.status(500).json({
@@ -1809,20 +1886,27 @@ app.delete(
 app.get(
   "/api/health",
   async (req, res) => {
+
     try {
+
       await query(
         "SELECT 1"
       );
 
+
       res.json({
         ok: true,
+
         database:
           "connected"
       });
 
+
     } catch {
+
       res.status(503).json({
         ok: false,
+
         database:
           "disconnected"
       });
@@ -1845,6 +1929,7 @@ app.use(
 app.get(
   /.*/,
   (req, res) => {
+
     res.sendFile(
       path.join(
         FRONTEND_DIR,
@@ -1860,14 +1945,18 @@ app.get(
 ===================================================== */
 
 (async () => {
+
   try {
+
     await ensureDatabase();
 
     await ensureAdmin();
 
+
     app.listen(
       PORT,
       () => {
+
         console.log(
           `MIZAN ONLINE running on port ${PORT}`
         );
@@ -1882,7 +1971,9 @@ app.get(
       }
     );
 
+
   } catch (e) {
+
     console.error(
       "STARTUP ERROR:",
       e
@@ -1890,4 +1981,5 @@ app.get(
 
     process.exit(1);
   }
+
 })();
