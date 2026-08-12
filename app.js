@@ -2,47 +2,52 @@ const app = document.getElementById("app");
 
 const tokenKey = "mizan_token";
 
-/*
-====================================================
- MIZAN API
- Frontend: GitHub Pages
- Backend: Railway
-====================================================
-*/
+/* ====================================================
+   MIZAN
+   Frontend: GitHub Pages
+   Backend: Railway
+==================================================== */
 
-const API_BASE = "https://almizan-production.up.railway.app/api";
+const API_BASE =
+  "https://almizan-production.up.railway.app/api";
 
+
+/* ====================================================
+   TOKEN
+==================================================== */
 
 function token() {
   return localStorage.getItem(tokenKey) || "";
 }
 
 
-/*
-====================================================
- SECURITY / ESCAPE HTML
-====================================================
-*/
+/* ====================================================
+   ESCAPE HTML
+==================================================== */
 
-function esc(v) {
-  return String(v ?? "").replace(
+function esc(value) {
+
+  return String(value ?? "").replace(
     /[&<>"']/g,
-    s => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;"
-    }[s])
+    function (s) {
+
+      return {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;"
+      }[s];
+
+    }
   );
+
 }
 
 
-/*
-====================================================
- API REQUEST
-====================================================
-*/
+/* ====================================================
+   API REQUEST
+==================================================== */
 
 async function api(url, options = {}) {
 
@@ -50,29 +55,43 @@ async function api(url, options = {}) {
     ...(options.headers || {})
   };
 
+
   if (options.body instanceof FormData) {
 
-    headers.Authorization = `Bearer ${token()}`;
+    headers.Authorization =
+      "Bearer " + token();
 
   } else {
 
-    headers["Content-Type"] = "application/json";
-    headers.Authorization = `Bearer ${token()}`;
+    headers["Content-Type"] =
+      "application/json";
+
+    headers.Authorization =
+      "Bearer " + token();
 
   }
 
-  const fullUrl = API_BASE + url;
+
+  const fullUrl =
+    API_BASE + url;
+
 
   let response;
 
+
   try {
 
-    response = await fetch(fullUrl, {
-      ...options,
-      headers
-    });
+    response = await fetch(
+      fullUrl,
+      {
+        ...options,
+        headers
+      }
+    );
 
   } catch (error) {
+
+    console.error(error);
 
     throw new Error(
       "تعذر الاتصال بالسيرفر. تأكد أن Railway يعمل."
@@ -80,23 +99,34 @@ async function api(url, options = {}) {
 
   }
 
-  const text = await response.text();
+
+  const text =
+    await response.text();
+
 
   let data = {};
 
+
   try {
 
-    data = text ? JSON.parse(text) : {};
+    data =
+      text
+        ? JSON.parse(text)
+        : {};
 
   } catch (error) {
 
-    console.error("Server response:", text);
+    console.error(
+      "Server response:",
+      text
+    );
 
     throw new Error(
       "السيرفر لم يرجع JSON. تأكد من أن Backend يعمل على Railway."
     );
 
   }
+
 
   if (!response.ok) {
 
@@ -108,22 +138,24 @@ async function api(url, options = {}) {
 
     }
 
+
     throw new Error(
-      data.message || "حدث خطأ في السيرفر"
+      data.message ||
+      data.error ||
+      "حدث خطأ في السيرفر"
     );
 
   }
+
 
   return data;
 
 }
 
 
-/*
-====================================================
- LOGIN
-====================================================
-*/
+/* ====================================================
+   LOGIN VIEW
+==================================================== */
 
 function loginView() {
 
@@ -141,6 +173,7 @@ function loginView() {
           إدارة مكتب المحاماة
         </p>
 
+
         <form id="loginForm">
 
           <label>
@@ -153,6 +186,7 @@ function loginView() {
             required
           >
 
+
           <label>
             كلمة المرور
           </label>
@@ -164,12 +198,14 @@ function loginView() {
             required
           >
 
+
           <button
             class="btn full"
             type="submit"
           >
             تسجيل الدخول
           </button>
+
 
           <div
             id="loginError"
@@ -185,50 +221,72 @@ function loginView() {
   `;
 
 
-  document.getElementById("loginForm").onsubmit =
+  const form =
+    document.getElementById("loginForm");
+
+
+  form.onsubmit =
     async function (e) {
 
       e.preventDefault();
 
+
       const errorBox =
         document.getElementById("loginError");
 
-      errorBox.textContent = "";
+
+      errorBox.textContent =
+        "";
 
 
-      const usernameValue =
-        document.getElementById("username").value.trim();
+      const username =
+        document
+          .getElementById("username")
+          .value
+          .trim();
 
-      const passwordValue =
-        document.getElementById("password").value;
+
+      const password =
+        document
+          .getElementById("password")
+          .value;
 
 
       try {
 
-        const response = await fetch(
-          `${API_BASE}/login`,
-          {
-            method: "POST",
+        const response =
+          await fetch(
+            `${API_BASE}/login`,
+            {
+              method: "POST",
 
-            headers: {
-              "Content-Type": "application/json"
-            },
+              headers: {
+                "Content-Type":
+                  "application/json"
+              },
 
-            body: JSON.stringify({
-              username: usernameValue,
-              password: passwordValue
-            })
-          }
-        );
+              body:
+                JSON.stringify({
+                  username,
+                  password
+                })
+            }
+          );
 
 
-        const text = await response.text();
+        const text =
+          await response.text();
+
 
         let data = {};
 
+
         try {
 
-          data = text ? JSON.parse(text) : {};
+          data =
+            text
+              ? JSON.parse(text)
+              : {};
 
         } catch {
 
@@ -242,7 +300,9 @@ function loginView() {
         if (!response.ok) {
 
           throw new Error(
-            data.message || "فشل تسجيل الدخول"
+            data.message ||
+            data.error ||
+            "فشل تسجيل الدخول"
           );
 
         }
@@ -263,11 +323,16 @@ function loginView() {
         );
 
 
+        location.hash =
+          "";
+
+
         route();
 
       } catch (error) {
 
         console.error(error);
+
 
         errorBox.textContent =
           error.message ||
@@ -280,11 +345,9 @@ function loginView() {
 }
 
 
-/*
-====================================================
- COMMON SHELL
-====================================================
-*/
+/* ====================================================
+   COMMON SHELL
+==================================================== */
 
 function shell(title, sub) {
 
@@ -350,16 +413,15 @@ function shell(title, sub) {
 }
 
 
-/*
-====================================================
- COMMON BUTTONS
-====================================================
-*/
+/* ====================================================
+   COMMON BUTTONS
+==================================================== */
 
 function bindCommon() {
 
   const home =
     document.getElementById("home");
+
 
   const logout =
     document.getElementById("logout");
@@ -367,37 +429,41 @@ function bindCommon() {
 
   if (home) {
 
-    home.onclick = function () {
+    home.onclick =
+      function () {
 
-      location.hash = "";
+        location.hash =
+          "";
 
-    };
+      };
 
   }
 
 
   if (logout) {
 
-    logout.onclick = function () {
+    logout.onclick =
+      function () {
 
-      localStorage.removeItem(tokenKey);
+        localStorage.removeItem(
+          tokenKey
+        );
 
-      location.hash = "";
+        location.hash =
+          "";
 
-      loginView();
+        loginView();
 
-    };
+      };
 
   }
 
 }
 
 
-/*
-====================================================
- DASHBOARD
-====================================================
-*/
+/* ====================================================
+   DASHBOARD
+==================================================== */
 
 async function dashboard() {
 
@@ -449,7 +515,6 @@ async function dashboard() {
           class="grid"
           style="margin-top:18px"
         >
-
 
           <div class="dashboard-card card">
 
@@ -510,7 +575,6 @@ async function dashboard() {
 
           </div>
 
-
         </div>
 
       </div>
@@ -523,7 +587,11 @@ async function dashboard() {
   document.getElementById("logout").onclick =
     function () {
 
-      localStorage.removeItem(tokenKey);
+      localStorage.removeItem(
+        tokenKey
+      );
+
+      location.hash = "";
 
       loginView();
 
@@ -533,7 +601,8 @@ async function dashboard() {
   document.getElementById("searchPage").onclick =
     function () {
 
-      location.hash = "search";
+      location.hash =
+        "search";
 
     };
 
@@ -541,7 +610,8 @@ async function dashboard() {
   document.getElementById("casesPage").onclick =
     function () {
 
-      location.hash = "cases";
+      location.hash =
+        "cases";
 
     };
 
@@ -549,7 +619,8 @@ async function dashboard() {
   document.getElementById("powersPage").onclick =
     function () {
 
-      location.hash = "powers";
+      location.hash =
+        "powers";
 
     };
 
@@ -573,7 +644,7 @@ async function dashboard() {
         </div>
 
         <div class="num">
-          ${esc(d.cases)}
+          ${esc(d.cases ?? 0)}
         </div>
 
       </div>
@@ -586,7 +657,7 @@ async function dashboard() {
         </div>
 
         <div class="num">
-          ${esc(d.powers)}
+          ${esc(d.powers ?? 0)}
         </div>
 
       </div>
@@ -626,18 +697,18 @@ async function dashboard() {
 }
 
 
-/*
-====================================================
- MODAL
-====================================================
-*/
+/* ====================================================
+   MODAL
+==================================================== */
 
 function modal(title, fields, onSave) {
 
   const m =
     document.createElement("div");
 
-  m.className = "modal-back";
+
+  m.className =
+    "modal-back";
 
 
   m.innerHTML = `
@@ -663,21 +734,25 @@ function modal(title, fields, onSave) {
 
       <form id="mf">
 
-        ${fields.map(f => `
+        ${fields.map(
+          f => `
 
-          <label>
+            <label>
 
-            ${esc(f.label)}
+              ${esc(f.label)}
 
-            <input
-              id="${esc(f.id)}"
-              value="${esc(f.value || "")}"
-              ${f.required === false ? "" : "required"}
-            >
+              <input
+                id="${esc(f.id)}"
+                value="${esc(f.value || "")}"
+                ${f.required === false
+                  ? ""
+                  : "required"}
+              >
 
-          </label>
+            </label>
 
-        `).join("")}
+          `
+        ).join("")}
 
 
         <button
@@ -723,7 +798,10 @@ function modal(title, fields, onSave) {
       fields.forEach(f => {
 
         const input =
-          m.querySelector("#" + f.id);
+          m.querySelector(
+            "#" + f.id
+          );
+
 
         values[f.id] =
           input.value.trim();
@@ -739,7 +817,9 @@ function modal(title, fields, onSave) {
 
       } catch (error) {
 
-        m.querySelector("#me").textContent =
+        m.querySelector(
+          "#me"
+        ).textContent =
           error.message;
 
       }
@@ -749,11 +829,9 @@ function modal(title, fields, onSave) {
 }
 
 
-/*
-====================================================
- CASES
-====================================================
-*/
+/* ====================================================
+   CASES
+==================================================== */
 
 async function casesView() {
 
@@ -775,7 +853,9 @@ async function casesView() {
 
 
   const content =
-    document.getElementById("content");
+    document.getElementById(
+      "content"
+    );
 
 
   let page = 1;
@@ -797,6 +877,7 @@ async function casesView() {
           placeholder="ابحث برقم الملف أو اسم الموكل"
           value="${esc(q)}"
         >
+
 
         <button
           class="btn"
@@ -821,22 +902,6 @@ async function casesView() {
           + إضافة
         </button>
 
-
-        <button
-          class="btn"
-          id="import"
-        >
-          استيراد Excel
-        </button>
-
-
-        <input
-          id="file"
-          class="hidden"
-          type="file"
-          accept=".xlsx,.xls,.csv"
-        >
-
       </div>
 
 
@@ -850,6 +915,7 @@ async function casesView() {
 
       <div id="table"></div>
 
+
       <div
         id="pages"
         class="pagination"
@@ -858,22 +924,33 @@ async function casesView() {
     `;
 
 
-    document.getElementById("search").onclick =
+    document.getElementById(
+      "search"
+    ).onclick =
       function () {
 
         q =
-          document.getElementById("q").value.trim();
+          document
+            .getElementById("q")
+            .value
+            .trim();
 
-        incomplete = false;
+
+        incomplete =
+          false;
+
 
         page = 1;
+
 
         load();
 
       };
 
 
-    document.getElementById("inc").onclick =
+    document.getElementById(
+      "inc"
+    ).onclick =
       function () {
 
         q = "";
@@ -887,27 +964,10 @@ async function casesView() {
       };
 
 
-    document.getElementById("add").onclick =
+    document.getElementById(
+      "add"
+    ).onclick =
       add;
-
-
-    const importButton =
-      document.getElementById("import");
-
-    const fileInput =
-      document.getElementById("file");
-
-
-    importButton.onclick =
-      function () {
-
-        fileInput.click();
-
-      };
-
-
-    fileInput.onchange =
-      importFile;
 
 
     await load();
@@ -926,13 +986,23 @@ async function casesView() {
 
 
       const table =
-        document.getElementById("table");
+        document.getElementById(
+          "table"
+        );
 
 
-      if (!d.data || !d.data.length) {
+      if (
+        !d.data ||
+        !Array.isArray(d.data) ||
+        !d.data.length
+      ) {
 
         table.innerHTML =
-          `<div class="notice">لا توجد نتائج.</div>`;
+          `
+            <div class="notice">
+              لا توجد نتائج.
+            </div>
+          `;
 
       } else {
 
@@ -965,40 +1035,42 @@ async function casesView() {
 
               <tbody>
 
-                ${d.data.map(r => `
+                ${d.data.map(
+                  r => `
 
-                  <tr>
+                    <tr>
 
-                    <td>
-                      ${esc(r.file_number)}
-                    </td>
+                      <td>
+                        ${esc(r.file_number)}
+                      </td>
 
-                    <td>
-                      ${esc(r.client_name)}
-                    </td>
+                      <td>
+                        ${esc(r.client_name)}
+                      </td>
 
-                    <td class="actions">
+                      <td class="actions">
 
-                      <button
-                        class="btn secondary e"
-                        data-id="${r.id}"
-                      >
-                        تعديل
-                      </button>
+                        <button
+                          class="btn secondary e"
+                          data-id="${esc(r.id)}"
+                        >
+                          تعديل
+                        </button>
 
 
-                      <button
-                        class="btn danger d"
-                        data-id="${r.id}"
-                      >
-                        حذف
-                      </button>
+                        <button
+                          class="btn danger d"
+                          data-id="${esc(r.id)}"
+                        >
+                          حذف
+                        </button>
 
-                    </td>
+                      </td>
 
-                  </tr>
+                    </tr>
 
-                `).join("")}
+                  `
+                ).join("")}
 
               </tbody>
 
@@ -1021,10 +1093,18 @@ async function casesView() {
               const row =
                 d.data.find(
                   x =>
-                    x.id == button.dataset.id
+                    String(x.id) ===
+                    String(
+                      button.dataset.id
+                    )
                 );
 
-              if (row) edit(row);
+
+              if (row) {
+
+                edit(row);
+
+              }
 
             };
 
@@ -1038,7 +1118,9 @@ async function casesView() {
           button.onclick =
             function () {
 
-              del(button.dataset.id);
+              del(
+                button.dataset.id
+              );
 
             };
 
@@ -1046,7 +1128,9 @@ async function casesView() {
 
 
       const pages =
-        document.getElementById("pages");
+        document.getElementById(
+          "pages"
+        );
 
 
       const p =
@@ -1085,7 +1169,9 @@ async function casesView() {
       `;
 
 
-      document.getElementById("pr").onclick =
+      document.getElementById(
+        "pr"
+      ).onclick =
         function () {
 
           if (page > 1) {
@@ -1099,7 +1185,9 @@ async function casesView() {
         };
 
 
-      document.getElementById("nx").onclick =
+      document.getElementById(
+        "nx"
+      ).onclick =
         function () {
 
           if (page < p.pages) {
@@ -1112,16 +1200,27 @@ async function casesView() {
 
         };
 
-
     } catch (error) {
 
-      document.getElementById("table").innerHTML = `
+      const table =
+        document.getElementById(
+          "table"
+        );
 
-        <div class="error">
-          ${esc(error.message)}
-        </div>
 
-      `;
+      if (table) {
+
+        table.innerHTML = `
+
+          <div class="error">
+
+            ${esc(error.message)}
+
+          </div>
+
+        `;
+
+      }
 
     }
 
@@ -1130,45 +1229,70 @@ async function casesView() {
 
   async function add() {
 
-    const last =
-      await api("/cases/last-file");
+    try {
 
-
-    modal(
-      "إضافة ملف حفظ",
-      [
-        {
-          id: "file_number",
-          label: "رقم الملف",
-          value: last.next
-        },
-        {
-          id: "client_name",
-          label: "اسم الموكل"
-        }
-      ],
-      async values => {
-
+      const last =
         await api(
-          "/cases",
-          {
-            method: "POST",
-            body: JSON.stringify(values)
-          }
+          "/cases/last-file"
         );
 
 
-        q =
-          values.file_number;
+      modal(
+        "إضافة ملف حفظ",
+        [
+          {
+            id: "file_number",
+            label: "رقم الملف",
+            value:
+              last.next ??
+              last.file_number ??
+              ""
+          },
 
-        incomplete = false;
+          {
+            id: "client_name",
+            label: "اسم الموكل"
+          }
+        ],
 
-        page = 1;
+        async values => {
 
-        await load();
+          await api(
+            "/cases",
+            {
+              method: "POST",
 
-      }
-    );
+              body:
+                JSON.stringify(
+                  values
+                )
+            }
+          );
+
+
+          q =
+            values.file_number;
+
+
+          incomplete =
+            false;
+
+
+          page = 1;
+
+
+          await load();
+
+        }
+      );
+
+    } catch (error) {
+
+      alert(
+        error.message
+      );
+
+    }
 
   }
 
@@ -1181,21 +1305,29 @@ async function casesView() {
         {
           id: "file_number",
           label: "رقم الملف",
-          value: row.file_number
+          value:
+            row.file_number
         },
+
         {
           id: "client_name",
           label: "اسم الموكل",
-          value: row.client_name
+          value:
+            row.client_name
         }
       ],
+
       async values => {
 
         await api(
           `/cases/${row.id}`,
           {
             method: "PUT",
-            body: JSON.stringify(values)
+
+            body:
+              JSON.stringify(
+                values
+              )
           }
         );
 
@@ -1221,66 +1353,17 @@ async function casesView() {
     }
 
 
-    await api(
-      `/cases/${id}`,
-      {
-        method: "DELETE"
-      }
-    );
-
-
-    await load();
-
-  }
-
-
-  async function importFile(e) {
-
-    const file =
-      e.target.files[0];
-
-
-    if (!file) return;
-
-
-    const fd =
-      new FormData();
-
-
-    fd.append(
-      "file",
-      file
-    );
-
-
     try {
 
-      const d =
-        await api(
-          "/import/cases",
-          {
-            method: "POST",
-            body: fd
-          }
-        );
-
-
-      alert(
-        `تم الحفظ
-
-الإجمالي: ${d.total}
-تمت الإضافة: ${d.inserted}
-المكرر: ${d.duplicate}
-الناقص: ${d.incomplete}
-الصفوف الفارغة: ${d.skipped}`
+      await api(
+        `/cases/${id}`,
+        {
+          method: "DELETE"
+        }
       );
 
 
-      q = "";
-
-      incomplete = false;
-
-      await render();
+      await load();
 
     } catch (error) {
 
@@ -1290,9 +1373,6 @@ async function casesView() {
 
     }
 
-
-    e.target.value = "";
-
   }
 
 
@@ -1301,11 +1381,9 @@ async function casesView() {
 }
 
 
-/*
-====================================================
- POWERS
-====================================================
-*/
+/* ====================================================
+   POWERS
+==================================================== */
 
 async function powersView() {
 
@@ -1327,7 +1405,9 @@ async function powersView() {
 
 
   const content =
-    document.getElementById("content");
+    document.getElementById(
+      "content"
+    );
 
 
   let page = 1;
@@ -1374,34 +1454,19 @@ async function powersView() {
           + إضافة
         </button>
 
-
-        <button
-          class="btn"
-          id="import"
-        >
-          استيراد Excel
-        </button>
-
-
-        <input
-          id="file"
-          class="hidden"
-          type="file"
-          accept=".xlsx,.xls,.csv"
-        >
-
       </div>
 
 
       <div class="notice">
 
         البيانات مخفية افتراضيًا.
-        لن تظهر إلا بعد البحث.
+        لن تظهر إلا بعد البحث أو اختيار البيانات الناقصة.
 
       </div>
 
 
       <div id="table"></div>
+
 
       <div
         id="pages"
@@ -1411,22 +1476,33 @@ async function powersView() {
     `;
 
 
-    document.getElementById("search").onclick =
+    document.getElementById(
+      "search"
+    ).onclick =
       function () {
 
         q =
-          document.getElementById("q").value.trim();
+          document
+            .getElementById("q")
+            .value
+            .trim();
 
-        incomplete = false;
+
+        incomplete =
+          false;
+
 
         page = 1;
+
 
         load();
 
       };
 
 
-    document.getElementById("inc").onclick =
+    document.getElementById(
+      "inc"
+    ).onclick =
       function () {
 
         q = "";
@@ -1440,27 +1516,10 @@ async function powersView() {
       };
 
 
-    document.getElementById("add").onclick =
+    document.getElementById(
+      "add"
+    ).onclick =
       add;
-
-
-    const importButton =
-      document.getElementById("import");
-
-    const fileInput =
-      document.getElementById("file");
-
-
-    importButton.onclick =
-      function () {
-
-        fileInput.click();
-
-      };
-
-
-    fileInput.onchange =
-      importFile;
 
 
     await load();
@@ -1479,13 +1538,23 @@ async function powersView() {
 
 
       const table =
-        document.getElementById("table");
+        document.getElementById(
+          "table"
+        );
 
 
-      if (!d.data || !d.data.length) {
+      if (
+        !d.data ||
+        !Array.isArray(d.data) ||
+        !d.data.length
+      ) {
 
         table.innerHTML =
-          `<div class="notice">لا توجد نتائج.</div>`;
+          `
+            <div class="notice">
+              لا توجد نتائج.
+            </div>
+          `;
 
       } else {
 
@@ -1526,48 +1595,52 @@ async function powersView() {
 
               <tbody>
 
-                ${d.data.map(r => `
+                ${d.data.map(
+                  r => `
 
-                  <tr>
+                    <tr>
 
-                    <td>
-                      ${esc(r.file_number)}
-                    </td>
+                      <td>
+                        ${esc(r.file_number)}
+                      </td>
 
-                    <td>
-                      ${esc(r.client_name)}
-                    </td>
+                      <td>
+                        ${esc(r.client_name)}
+                      </td>
 
-                    <td>
-                      ${esc(r.power_number)}
-                    </td>
+                      <td>
+                        ${esc(r.power_number)}
+                      </td>
 
-                    <td>
-                      ${esc(r.documentation_authority)}
-                    </td>
+                      <td>
+                        ${esc(
+                          r.documentation_authority
+                        )}
+                      </td>
 
-                    <td class="actions">
+                      <td class="actions">
 
-                      <button
-                        class="btn secondary e"
-                        data-id="${r.id}"
-                      >
-                        تعديل
-                      </button>
+                        <button
+                          class="btn secondary e"
+                          data-id="${esc(r.id)}"
+                        >
+                          تعديل
+                        </button>
 
 
-                      <button
-                        class="btn danger d"
-                        data-id="${r.id}"
-                      >
-                        حذف
-                      </button>
+                        <button
+                          class="btn danger d"
+                          data-id="${esc(r.id)}"
+                        >
+                          حذف
+                        </button>
 
-                    </td>
+                      </td>
 
-                  </tr>
+                    </tr>
 
-                `).join("")}
+                  `
+                ).join("")}
 
               </tbody>
 
@@ -1590,10 +1663,18 @@ async function powersView() {
               const row =
                 d.data.find(
                   x =>
-                    x.id == button.dataset.id
+                    String(x.id) ===
+                    String(
+                      button.dataset.id
+                    )
                 );
 
-              if (row) edit(row);
+
+              if (row) {
+
+                edit(row);
+
+              }
 
             };
 
@@ -1607,7 +1688,9 @@ async function powersView() {
           button.onclick =
             function () {
 
-              del(button.dataset.id);
+              del(
+                button.dataset.id
+              );
 
             };
 
@@ -1615,7 +1698,9 @@ async function powersView() {
 
 
       const pages =
-        document.getElementById("pages");
+        document.getElementById(
+          "pages"
+        );
 
 
       const p =
@@ -1654,7 +1739,9 @@ async function powersView() {
       `;
 
 
-      document.getElementById("pr").onclick =
+      document.getElementById(
+        "pr"
+      ).onclick =
         function () {
 
           if (page > 1) {
@@ -1668,7 +1755,9 @@ async function powersView() {
         };
 
 
-      document.getElementById("nx").onclick =
+      document.getElementById(
+        "nx"
+      ).onclick =
         function () {
 
           if (page < p.pages) {
@@ -1681,16 +1770,27 @@ async function powersView() {
 
         };
 
-
     } catch (error) {
 
-      document.getElementById("table").innerHTML = `
+      const table =
+        document.getElementById(
+          "table"
+        );
 
-        <div class="error">
-          ${esc(error.message)}
-        </div>
 
-      `;
+      if (table) {
+
+        table.innerHTML = `
+
+          <div class="error">
+
+            ${esc(error.message)}
+
+          </div>
+
+        `;
+
+      }
 
     }
 
@@ -1699,53 +1799,81 @@ async function powersView() {
 
   async function add() {
 
-    const last =
-      await api("/powers/last-file");
+    try {
 
-
-    modal(
-      "إضافة توكيل",
-      [
-        {
-          id: "file_number",
-          label: "رقم الملف",
-          value: last.next
-        },
-        {
-          id: "client_name",
-          label: "اسم الموكل"
-        },
-        {
-          id: "power_number",
-          label: "رقم التوكيل"
-        },
-        {
-          id: "documentation_authority",
-          label: "جهة التوثيق"
-        }
-      ],
-      async values => {
-
+      const last =
         await api(
-          "/powers",
-          {
-            method: "POST",
-            body: JSON.stringify(values)
-          }
+          "/powers/last-file"
         );
 
 
-        q =
-          values.power_number;
+      modal(
+        "إضافة توكيل",
 
-        incomplete = false;
+        [
+          {
+            id: "file_number",
+            label: "رقم الملف",
+            value:
+              last.next ??
+              last.file_number ??
+              "2432"
+          },
 
-        page = 1;
+          {
+            id: "client_name",
+            label: "اسم الموكل"
+          },
 
-        await load();
+          {
+            id: "power_number",
+            label: "رقم التوكيل"
+          },
 
-      }
-    );
+          {
+            id: "documentation_authority",
+            label: "جهة التوثيق"
+          }
+        ],
+
+        async values => {
+
+          await api(
+            "/powers",
+            {
+              method: "POST",
+
+              body:
+                JSON.stringify(
+                  values
+                )
+            }
+          );
+
+
+          q =
+            values.power_number;
+
+
+          incomplete =
+            false;
+
+
+          page = 1;
+
+
+          await load();
+
+        }
+      );
+
+    } catch (error) {
+
+      alert(
+        error.message
+      );
+
+    }
 
   }
 
@@ -1754,35 +1882,48 @@ async function powersView() {
 
     modal(
       "تعديل التوكيل",
+
       [
         {
           id: "file_number",
           label: "رقم الملف",
-          value: row.file_number
+          value:
+            row.file_number
         },
+
         {
           id: "client_name",
           label: "اسم الموكل",
-          value: row.client_name
+          value:
+            row.client_name
         },
+
         {
           id: "power_number",
           label: "رقم التوكيل",
-          value: row.power_number
+          value:
+            row.power_number
         },
+
         {
           id: "documentation_authority",
           label: "جهة التوثيق",
-          value: row.documentation_authority
+          value:
+            row.documentation_authority
         }
       ],
+
       async values => {
 
         await api(
           `/powers/${row.id}`,
           {
             method: "PUT",
-            body: JSON.stringify(values)
+
+            body:
+              JSON.stringify(
+                values
+              )
           }
         );
 
@@ -1808,66 +1949,17 @@ async function powersView() {
     }
 
 
-    await api(
-      `/powers/${id}`,
-      {
-        method: "DELETE"
-      }
-    );
-
-
-    await load();
-
-  }
-
-
-  async function importFile(e) {
-
-    const file =
-      e.target.files[0];
-
-
-    if (!file) return;
-
-
-    const fd =
-      new FormData();
-
-
-    fd.append(
-      "file",
-      file
-    );
-
-
     try {
 
-      const d =
-        await api(
-          "/import/powers",
-          {
-            method: "POST",
-            body: fd
-          }
-        );
-
-
-      alert(
-        `تم الحفظ
-
-الإجمالي: ${d.total}
-تمت الإضافة: ${d.inserted}
-المكرر: ${d.duplicate}
-الناقص: ${d.incomplete}
-الصفوف الفارغة: ${d.skipped}`
+      await api(
+        `/powers/${id}`,
+        {
+          method: "DELETE"
+        }
       );
 
 
-      q = "";
-
-      incomplete = false;
-
-      await render();
+      await load();
 
     } catch (error) {
 
@@ -1877,9 +1969,6 @@ async function powersView() {
 
     }
 
-
-    e.target.value = "";
-
   }
 
 
@@ -1888,11 +1977,9 @@ async function powersView() {
 }
 
 
-/*
-====================================================
- GENERAL SEARCH
-====================================================
-*/
+/* ====================================================
+   GENERAL SEARCH
+==================================================== */
 
 async function searchView() {
 
@@ -1914,7 +2001,9 @@ async function searchView() {
 
 
   const content =
-    document.getElementById("content");
+    document.getElementById(
+      "content"
+    );
 
 
   content.innerHTML = `
@@ -1951,13 +2040,16 @@ async function searchView() {
 
 
   const results =
-    document.getElementById("results");
+    document.getElementById(
+      "results"
+    );
 
 
   async function go() {
 
     const query =
-      document.getElementById("q")
+      document
+        .getElementById("q")
         .value
         .trim();
 
@@ -1967,7 +2059,9 @@ async function searchView() {
       results.innerHTML = `
 
         <div class="notice">
+
           اكتب اسم الموكل أو رقم الملف أو رقم التوكيل للبحث.
+
         </div>
 
       `;
@@ -2019,63 +2113,68 @@ async function searchView() {
           ${
             cases.length
 
-              ?
+              ? `
 
-              `
+                <div class="table-wrap">
 
-              <div class="table-wrap">
+                  <table>
 
-                <table>
-
-                  <thead>
-
-                    <tr>
-
-                      <th>
-                        رقم الملف
-                      </th>
-
-                      <th>
-                        اسم الموكل
-                      </th>
-
-                    </tr>
-
-                  </thead>
-
-
-                  <tbody>
-
-                    ${cases.map(r => `
+                    <thead>
 
                       <tr>
 
-                        <td>
-                          ${esc(r.file_number)}
-                        </td>
+                        <th>
+                          رقم الملف
+                        </th>
 
-                        <td>
-                          ${esc(r.client_name)}
-                        </td>
+                        <th>
+                          اسم الموكل
+                        </th>
 
                       </tr>
 
-                    `).join("")}
+                    </thead>
 
-                  </tbody>
 
-                </table>
+                    <tbody>
 
-              </div>
+                      ${cases.map(
+                        r => `
+
+                          <tr>
+
+                            <td>
+                              ${esc(
+                                r.file_number
+                              )}
+                            </td>
+
+                            <td>
+                              ${esc(
+                                r.client_name
+                              )}
+                            </td>
+
+                          </tr>
+
+                        `
+                      ).join("")}
+
+                    </tbody>
+
+                  </table>
+
+                </div>
 
               `
 
-              :
+              : `
 
-              `<p class="small">
-                لا توجد ملفات حفظ لهذا البحث.
-              </p>`
+                <p class="small">
+                  لا توجد ملفات حفظ لهذا البحث.
+                </p>
 
+              `
           }
 
         </div>
@@ -2092,85 +2191,93 @@ async function searchView() {
           ${
             powers.length
 
-              ?
+              ? `
 
-              `
+                <div class="table-wrap">
 
-              <div class="table-wrap">
+                  <table>
 
-                <table>
-
-                  <thead>
-
-                    <tr>
-
-                      <th>
-                        رقم الملف
-                      </th>
-
-                      <th>
-                        اسم الموكل
-                      </th>
-
-                      <th>
-                        رقم التوكيل
-                      </th>
-
-                      <th>
-                        جهة التوثيق
-                      </th>
-
-                    </tr>
-
-                  </thead>
-
-
-                  <tbody>
-
-                    ${powers.map(r => `
+                    <thead>
 
                       <tr>
 
-                        <td>
-                          ${esc(r.file_number)}
-                        </td>
+                        <th>
+                          رقم الملف
+                        </th>
 
-                        <td>
-                          ${esc(r.client_name)}
-                        </td>
+                        <th>
+                          اسم الموكل
+                        </th>
 
-                        <td>
-                          ${esc(r.power_number)}
-                        </td>
+                        <th>
+                          رقم التوكيل
+                        </th>
 
-                        <td>
-                          ${esc(r.documentation_authority)}
-                        </td>
+                        <th>
+                          جهة التوثيق
+                        </th>
 
                       </tr>
 
-                    `).join("")}
+                    </thead>
 
-                  </tbody>
 
-                </table>
+                    <tbody>
 
-              </div>
+                      ${powers.map(
+                        r => `
+
+                          <tr>
+
+                            <td>
+                              ${esc(
+                                r.file_number
+                              )}
+                            </td>
+
+                            <td>
+                              ${esc(
+                                r.client_name
+                              )}
+                            </td>
+
+                            <td>
+                              ${esc(
+                                r.power_number
+                              )}
+                            </td>
+
+                            <td>
+                              ${esc(
+                                r.documentation_authority
+                              )}
+                            </td>
+
+                          </tr>
+
+                        `
+                      ).join("")}
+
+                    </tbody>
+
+                  </table>
+
+                </div>
 
               `
 
-              :
+              : `
 
-              `<p class="small">
-                لا توجد توكيلات لهذا البحث.
-              </p>`
+                <p class="small">
+                  لا توجد توكيلات لهذا البحث.
+                </p>
 
+              `
           }
 
         </div>
 
       `;
-
 
     } catch (error) {
 
@@ -2192,11 +2299,15 @@ async function searchView() {
   }
 
 
-  document.getElementById("go").onclick =
+  document.getElementById(
+    "go"
+  ).onclick =
     go;
 
 
-  document.getElementById("q").onkeydown =
+  document.getElementById(
+    "q"
+  ).onkeydown =
     function (e) {
 
       if (e.key === "Enter") {
@@ -2210,11 +2321,9 @@ async function searchView() {
 }
 
 
-/*
-====================================================
- ROUTER
-====================================================
-*/
+/* ====================================================
+   ROUTER
+==================================================== */
 
 function route() {
 
@@ -2257,11 +2366,9 @@ function route() {
 }
 
 
-/*
-====================================================
- START
-====================================================
-*/
+/* ====================================================
+   START
+==================================================== */
 
 window.addEventListener(
   "hashchange",
