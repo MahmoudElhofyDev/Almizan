@@ -1,16 +1,20 @@
 const app = document.getElementById("app");
 
 /*
-====================================================
-MIZAN
-Frontend: GitHub Pages
-Backend: Railway
+=====================================================
+MIZAN - FRONTEND
+=====================================================
+Backend:
+https://almizan-production.up.railway.app
 
-SECURITY:
-- Token is stored in sessionStorage ONLY.
-- No persistent login in localStorage.
-- Every new browser session requires login.
-====================================================
+Security:
+- Token in memory only
+- NO localStorage
+- NO sessionStorage
+- Refresh => Login again
+- Direct #cases / #powers / #search => Login
+- Logout => clear token immediately
+=====================================================
 */
 
 const API_BASE =
@@ -18,32 +22,66 @@ const API_BASE =
 
 
 /*
-====================================================
-SESSION TOKEN
-====================================================
+=====================================================
+MEMORY SESSION
+=====================================================
 */
 
-const tokenKey = "mizan_token";
+let tokenValue = "";
 
+
+/*
+=====================================================
+TOKEN
+=====================================================
+*/
 
 function token() {
-
-  return sessionStorage.getItem(tokenKey) || "";
-
+  return tokenValue || "";
 }
 
 
-function clearSession() {
+/*
+=====================================================
+CLEAR SESSION
+=====================================================
+*/
 
-  sessionStorage.removeItem(tokenKey);
+function clearSession() {
+  tokenValue = "";
+}
+
+
+/*
+=====================================================
+REMOVE HASH
+=====================================================
+*/
+
+function removeHash() {
+
+  try {
+
+    history.replaceState(
+      null,
+      "",
+      window.location.pathname +
+      window.location.search
+    );
+
+  } catch {
+
+    window.location.hash = "";
+
+  }
 
 }
 
 
 /*
-====================================================
+=====================================================
 ESCAPE HTML
-====================================================
+=====================================================
 */
 
 function esc(value) {
@@ -67,36 +105,37 @@ function esc(value) {
 
 
 /*
-====================================================
+=====================================================
 API REQUEST
-====================================================
+=====================================================
 */
 
 async function api(url, options = {}) {
+
+  if (!token()) {
+
+    loginView();
+
+    throw new Error(
+      "يجب تسجيل الدخول أولًا."
+    );
+
+  }
+
 
   const headers = {
     ...(options.headers || {})
   };
 
 
-  /*
-  --------------------------------------------
-  FormData
-  --------------------------------------------
-  */
-
-  if (options.body instanceof FormData) {
+  if (
+    options.body instanceof FormData
+  ) {
 
     headers.Authorization =
       "Bearer " + token();
 
   }
-
-  /*
-  --------------------------------------------
-  JSON
-  --------------------------------------------
-  */
 
   else {
 
@@ -109,12 +148,6 @@ async function api(url, options = {}) {
   }
 
 
-  /*
-  --------------------------------------------
-  FULL URL
-  --------------------------------------------
-  */
-
   const fullUrl =
     API_BASE + url;
 
@@ -124,19 +157,24 @@ async function api(url, options = {}) {
 
   try {
 
-    response = await fetch(
-      fullUrl,
-      {
-        ...options,
-        headers
-      }
-    );
+    response =
+      await fetch(
+        fullUrl,
+        {
+          ...options,
+          headers,
+          cache: "no-store"
+        }
+      );
 
   }
 
   catch (error) {
 
-    console.error(error);
+    console.error(
+      "API CONNECTION ERROR:",
+      error
+    );
 
     throw new Error(
       "تعذر الاتصال بالسيرفر. تأكد أن Railway يعمل."
@@ -144,12 +182,6 @@ async function api(url, options = {}) {
 
   }
 
-
-  /*
-  --------------------------------------------
-  READ RESPONSE
-  --------------------------------------------
-  */
 
   const text =
     await response.text();
@@ -167,29 +199,27 @@ async function api(url, options = {}) {
 
   }
 
-  catch (error) {
+  catch {
 
     console.error(
-      "Server response:",
+      "SERVER RESPONSE:",
       text
     );
 
     throw new Error(
-      "السيرفر لم يرجع JSON. تأكد من أن Backend يعمل على Railway."
+      "السيرفر لم يرجع JSON. تأكد أن Backend يعمل."
     );
 
   }
 
 
-  /*
-  --------------------------------------------
-  UNAUTHORIZED
-  --------------------------------------------
-  */
-
-  if (response.status === 401) {
+  if (
+    response.status === 401
+  ) {
 
     clearSession();
+
+    removeHash();
 
     loginView();
 
@@ -200,18 +230,12 @@ async function api(url, options = {}) {
   }
 
 
-  /*
-  --------------------------------------------
-  OTHER ERRORS
-  --------------------------------------------
-  */
-
   if (!response.ok) {
 
     throw new Error(
       data.message ||
       data.error ||
-      "حدث خطأ في السيرفر"
+      "حدث خطأ في السيرفر."
     );
 
   }
@@ -223,36 +247,16 @@ async function api(url, options = {}) {
 
 
 /*
-====================================================
-LOGIN VIEW
-====================================================
+=====================================================
+LOGIN
+=====================================================
 */
 
 function loginView() {
 
-  /*
-  مهم:
-  لو كان فيه Token قديم في sessionStorage
-  نمسحه قبل عرض Login.
-  */
-
   clearSession();
 
-
-  /*
-  إزالة أي Hash من الرابط
-  */
-
-  if (location.hash) {
-
-    history.replaceState(
-      null,
-      "",
-      location.pathname +
-      location.search
-    );
-
-  }
+  removeHash();
 
 
   app.innerHTML = `
@@ -278,7 +282,7 @@ function loginView() {
 
           <input
             id="username"
-            value="admin"
+            type="text"
             autocomplete="username"
             required
           >
@@ -291,7 +295,6 @@ function loginView() {
           <input
             id="password"
             type="password"
-            value="admin123"
             autocomplete="current-password"
             required
           >
@@ -300,6 +303,7 @@ function loginView() {
           <button
             class="btn full"
             type="submit"
+            id="loginButton"
           >
             تسجيل الدخول
           </button>
@@ -325,6 +329,11 @@ function loginView() {
     );
 
 
+  if (!form) {
+    return;
+  }
+
+
   form.onsubmit =
     async function (e) {
 
@@ -337,21 +346,51 @@ function loginView() {
         );
 
 
+      const button =
+        document.getElementById(
+          "loginButton"
+        );
+
+
       errorBox.textContent =
         "";
 
 
       const username =
         document
-          .getElementById("username")
+          .getElementById(
+            "username"
+          )
           .value
           .trim();
 
 
       const password =
         document
-          .getElementById("password")
+          .getElementById(
+            "password"
+          )
           .value;
+
+
+      if (
+        !username ||
+        !password
+      ) {
+
+        errorBox.textContent =
+          "اكتب اسم المستخدم وكلمة المرور.";
+
+        return;
+
+      }
+
+
+      button.disabled =
+        true;
+
+      button.textContent =
+        "جاري تسجيل الدخول...";
 
 
       try {
@@ -371,7 +410,9 @@ function loginView() {
                 JSON.stringify({
                   username,
                   password
-                })
+                }),
+
+              cache: "no-store"
             }
           );
 
@@ -390,12 +431,17 @@ function loginView() {
               ? JSON.parse(text)
               : {};
 
-          }
+        }
 
         catch {
 
+          console.error(
+            "LOGIN RESPONSE:",
+            text
+          );
+
           throw new Error(
-            "Backend لم يرجع JSON. تأكد أن رابط Railway صحيح ويعمل."
+            "Backend لم يرجع JSON."
           );
 
         }
@@ -406,7 +452,7 @@ function loginView() {
           throw new Error(
             data.message ||
             data.error ||
-            "فشل تسجيل الدخول"
+            "اسم المستخدم أو كلمة المرور غير صحيحة."
           );
 
         }
@@ -422,45 +468,43 @@ function loginView() {
 
 
         /*
-        ============================================
-        مهم جداً:
-        sessionStorage بدلاً من localStorage
-        ============================================
+        =============================================
+        TOKEN MEMORY ONLY
+        =============================================
         */
 
-        sessionStorage.setItem(
-          tokenKey,
-          data.token
-        );
+        tokenValue =
+          String(data.token);
 
 
-        /*
-        --------------------------------------------
-        بعد Login
-        --------------------------------------------
-        */
-
-        history.replaceState(
-          null,
-          "",
-          location.pathname +
-          location.search
-        );
+        removeHash();
 
 
         route();
-
 
       }
 
       catch (error) {
 
-        console.error(error);
+        console.error(
+          "LOGIN ERROR:",
+          error
+        );
 
 
         errorBox.textContent =
           error.message ||
-          "حدث خطأ أثناء تسجيل الدخول";
+          "حدث خطأ أثناء تسجيل الدخول.";
+
+      }
+
+      finally {
+
+        button.disabled =
+          false;
+
+        button.textContent =
+          "تسجيل الدخول";
 
       }
 
@@ -470,9 +514,9 @@ function loginView() {
 
 
 /*
-====================================================
+=====================================================
 COMMON SHELL
-====================================================
+=====================================================
 */
 
 function shell(title, sub) {
@@ -542,9 +586,9 @@ function shell(title, sub) {
 
 
 /*
-====================================================
+=====================================================
 COMMON BUTTONS
-====================================================
+=====================================================
 */
 
 function bindCommon() {
@@ -566,17 +610,11 @@ function bindCommon() {
     home.onclick =
       function () {
 
-        /*
-        الرجوع للرئيسية بعد التأكد
-        من وجود جلسة.
-        */
-
         if (!token()) {
 
           return loginView();
 
         }
-
 
         location.hash = "";
 
@@ -592,18 +630,7 @@ function bindCommon() {
 
         clearSession();
 
-
-        /*
-        إزالة الـ Hash بالكامل
-        */
-
-        history.replaceState(
-          null,
-          "",
-          location.pathname +
-          location.search
-        );
-
+        removeHash();
 
         loginView();
 
@@ -615,18 +642,12 @@ function bindCommon() {
 
 
 /*
-====================================================
+=====================================================
 DASHBOARD
-====================================================
+=====================================================
 */
 
 async function dashboard() {
-
-  /*
-  --------------------------------------------
-  حماية الصفحة
-  --------------------------------------------
-  */
 
   if (!token()) {
 
@@ -756,14 +777,7 @@ async function dashboard() {
 
       clearSession();
 
-
-      history.replaceState(
-        null,
-        "",
-        location.pathname +
-        location.search
-      );
-
+      removeHash();
 
       loginView();
 
@@ -776,13 +790,10 @@ async function dashboard() {
     function () {
 
       if (!token()) {
-
         return loginView();
-
       }
 
-      location.hash =
-        "search";
+      location.hash = "search";
 
     };
 
@@ -793,13 +804,10 @@ async function dashboard() {
     function () {
 
       if (!token()) {
-
         return loginView();
-
       }
 
-      location.hash =
-        "cases";
+      location.hash = "cases";
 
     };
 
@@ -810,13 +818,10 @@ async function dashboard() {
     function () {
 
       if (!token()) {
-
         return loginView();
-
       }
 
-      location.hash =
-        "powers";
+      location.hash = "powers";
 
     };
 
@@ -900,9 +905,9 @@ async function dashboard() {
 
 
 /*
-====================================================
+=====================================================
 MODAL
-====================================================
+=====================================================
 */
 
 function modal(
@@ -1055,61 +1060,15 @@ function modal(
 
 
 /*
-====================================================
-IMPORT EXCEL HELPER
-====================================================
-*/
-
-function createImportInput(
-  id
-) {
-
-  const input =
-    document.createElement(
-      "input"
-    );
-
-
-  input.type =
-    "file";
-
-
-  input.id =
-    id;
-
-
-  input.accept =
-    ".xlsx,.xls,.csv";
-
-
-  input.style.display =
-    "none";
-
-
-  document.body.appendChild(
-    input
-  );
-
-
-  return input;
-
-}
-
-
-/*
-====================================================
+=====================================================
 IMPORT CASES
-====================================================
+=====================================================
 */
 
-async function importCases(
-  file
-) {
+async function importCases(file) {
 
   if (!file) {
-
     return;
-
   }
 
 
@@ -1146,19 +1105,15 @@ async function importCases(
 
 
 /*
-====================================================
+=====================================================
 IMPORT POWERS
-====================================================
+=====================================================
 */
 
-async function importPowers(
-  file
-) {
+async function importPowers(file) {
 
   if (!file) {
-
     return;
-
   }
 
 
@@ -1195,9 +1150,9 @@ async function importPowers(
 
 
 /*
-====================================================
+=====================================================
 CASES
-====================================================
+=====================================================
 */
 
 async function casesView() {
@@ -1226,17 +1181,11 @@ async function casesView() {
 
 
   let page = 1;
-
   let q = "";
-
   let incomplete = false;
 
 
   async function render() {
-
-    /*
-    حماية إضافية قبل إنشاء الصفحة
-    */
 
     if (!token()) {
 
@@ -1275,7 +1224,6 @@ async function casesView() {
         </button>
 
 
-        <!-- استيراد Excel -->
         <button
           class="btn"
           id="importCases"
@@ -1345,11 +1293,8 @@ async function casesView() {
       function () {
 
         if (!token()) {
-
           return loginView();
-
         }
-
 
         fileInput.click();
 
@@ -1364,9 +1309,7 @@ async function casesView() {
 
 
         if (!file) {
-
           return;
-
         }
 
 
@@ -1386,9 +1329,7 @@ async function casesView() {
 
 
           q = "";
-
           incomplete = false;
-
           page = 1;
 
 
@@ -1409,10 +1350,8 @@ async function casesView() {
           importButton.disabled =
             false;
 
-
           importButton.textContent =
             "📥 استيراد Excel";
-
 
           fileInput.value =
             "";
@@ -1429,17 +1368,12 @@ async function casesView() {
 
         q =
           document
-            .getElementById(
-              "q"
-            )
+            .getElementById("q")
             .value
             .trim();
 
 
-        incomplete =
-          false;
-
-
+        incomplete = false;
         page = 1;
 
 
@@ -1454,10 +1388,9 @@ async function casesView() {
       function () {
 
         q = "";
-
         incomplete = true;
-
         page = 1;
+
 
         load();
 
@@ -1478,9 +1411,7 @@ async function casesView() {
   async function load() {
 
     if (!token()) {
-
       return loginView();
-
     }
 
 
@@ -1499,9 +1430,7 @@ async function casesView() {
 
 
       if (!table) {
-
         return;
-
       }
 
 
@@ -1607,9 +1536,7 @@ async function casesView() {
 
 
       table
-        .querySelectorAll(
-          ".e"
-        )
+        .querySelectorAll(".e")
         .forEach(
           button => {
 
@@ -1619,9 +1546,7 @@ async function casesView() {
                 const row =
                   d.data.find(
                     x =>
-                      String(
-                        x.id
-                      ) ===
+                      String(x.id) ===
                       String(
                         button.dataset.id
                       )
@@ -1629,9 +1554,7 @@ async function casesView() {
 
 
                 if (row) {
-
                   edit(row);
-
                 }
 
               };
@@ -1641,9 +1564,7 @@ async function casesView() {
 
 
       table
-        .querySelectorAll(
-          ".d"
-        )
+        .querySelectorAll(".d")
         .forEach(
           button => {
 
@@ -1664,6 +1585,11 @@ async function casesView() {
         document.getElementById(
           "pages"
         );
+
+
+      if (!pages) {
+        return;
+      }
 
 
       const p =
@@ -1718,11 +1644,8 @@ async function casesView() {
         function () {
 
           if (page > 1) {
-
             page--;
-
             load();
-
           }
 
         };
@@ -1738,7 +1661,6 @@ async function casesView() {
           ) {
 
             page++;
-
             load();
 
           }
@@ -1760,11 +1682,7 @@ async function casesView() {
         table.innerHTML = `
 
           <div class="error">
-
-            ${esc(
-              error.message
-            )}
-
+            ${esc(error.message)}
           </div>
 
         `;
@@ -1779,9 +1697,7 @@ async function casesView() {
   async function add() {
 
     if (!token()) {
-
       return loginView();
-
     }
 
 
@@ -1832,11 +1748,7 @@ async function casesView() {
           q =
             values.file_number;
 
-
-          incomplete =
-            false;
-
-
+          incomplete = false;
           page = 1;
 
 
@@ -1862,9 +1774,7 @@ async function casesView() {
   function edit(row) {
 
     if (!token()) {
-
       return loginView();
-
     }
 
 
@@ -1916,9 +1826,7 @@ async function casesView() {
   async function del(id) {
 
     if (!token()) {
-
       return loginView();
-
     }
 
 
@@ -1927,9 +1835,7 @@ async function casesView() {
         "هل تريد حذف هذا الملف؟"
       )
     ) {
-
       return;
-
     }
 
 
@@ -1964,17 +1870,15 @@ async function casesView() {
 
 
 /*
-====================================================
+=====================================================
 POWERS
-====================================================
+=====================================================
 */
 
 async function powersView() {
 
   if (!token()) {
-
     return loginView();
-
   }
 
 
@@ -1995,18 +1899,14 @@ async function powersView() {
 
 
   let page = 1;
-
   let q = "";
-
   let incomplete = false;
 
 
   async function render() {
 
     if (!token()) {
-
       return loginView();
-
     }
 
 
@@ -2040,7 +1940,6 @@ async function powersView() {
         </button>
 
 
-        <!-- استيراد Excel -->
         <button
           class="btn"
           id="importPowers"
@@ -2110,11 +2009,8 @@ async function powersView() {
       function () {
 
         if (!token()) {
-
           return loginView();
-
         }
-
 
         fileInput.click();
 
@@ -2129,15 +2025,12 @@ async function powersView() {
 
 
         if (!file) {
-
           return;
-
         }
 
 
         importButton.disabled =
           true;
-
 
         importButton.textContent =
           "⏳ جاري الاستيراد...";
@@ -2151,9 +2044,7 @@ async function powersView() {
 
 
           q = "";
-
           incomplete = false;
-
           page = 1;
 
 
@@ -2174,10 +2065,8 @@ async function powersView() {
           importButton.disabled =
             false;
 
-
           importButton.textContent =
             "📥 استيراد Excel";
-
 
           fileInput.value =
             "";
@@ -2194,17 +2083,11 @@ async function powersView() {
 
         q =
           document
-            .getElementById(
-              "q"
-            )
+            .getElementById("q")
             .value
             .trim();
 
-
-        incomplete =
-          false;
-
-
+        incomplete = false;
         page = 1;
 
 
@@ -2219,10 +2102,9 @@ async function powersView() {
       function () {
 
         q = "";
-
         incomplete = true;
-
         page = 1;
+
 
         load();
 
@@ -2243,9 +2125,7 @@ async function powersView() {
   async function load() {
 
     if (!token()) {
-
       return loginView();
-
     }
 
 
@@ -2264,9 +2144,7 @@ async function powersView() {
 
 
       if (!table) {
-
         return;
-
       }
 
 
@@ -2392,9 +2270,7 @@ async function powersView() {
 
 
       table
-        .querySelectorAll(
-          ".e"
-        )
+        .querySelectorAll(".e")
         .forEach(
           button => {
 
@@ -2404,9 +2280,7 @@ async function powersView() {
                 const row =
                   d.data.find(
                     x =>
-                      String(
-                        x.id
-                      ) ===
+                      String(x.id) ===
                       String(
                         button.dataset.id
                       )
@@ -2414,9 +2288,7 @@ async function powersView() {
 
 
                 if (row) {
-
                   edit(row);
-
                 }
 
               };
@@ -2426,9 +2298,7 @@ async function powersView() {
 
 
       table
-        .querySelectorAll(
-          ".d"
-        )
+        .querySelectorAll(".d")
         .forEach(
           button => {
 
@@ -2449,6 +2319,11 @@ async function powersView() {
         document.getElementById(
           "pages"
         );
+
+
+      if (!pages) {
+        return;
+      }
 
 
       const p =
@@ -2545,11 +2420,7 @@ async function powersView() {
         table.innerHTML = `
 
           <div class="error">
-
-            ${esc(
-              error.message
-            )}
-
+            ${esc(error.message)}
           </div>
 
         `;
@@ -2564,9 +2435,7 @@ async function powersView() {
   async function add() {
 
     if (!token()) {
-
       return loginView();
-
     }
 
 
@@ -2627,11 +2496,7 @@ async function powersView() {
           q =
             values.power_number;
 
-
-          incomplete =
-            false;
-
-
+          incomplete = false;
           page = 1;
 
 
@@ -2657,9 +2522,7 @@ async function powersView() {
   function edit(row) {
 
     if (!token()) {
-
       return loginView();
-
     }
 
 
@@ -2725,9 +2588,7 @@ async function powersView() {
   async function del(id) {
 
     if (!token()) {
-
       return loginView();
-
     }
 
 
@@ -2736,9 +2597,7 @@ async function powersView() {
         "هل تريد حذف هذا التوكيل؟"
       )
     ) {
-
       return;
-
     }
 
 
@@ -2773,17 +2632,15 @@ async function powersView() {
 
 
 /*
-====================================================
+=====================================================
 GENERAL SEARCH
-====================================================
+=====================================================
 */
 
 async function searchView() {
 
   if (!token()) {
-
     return loginView();
-
   }
 
 
@@ -2846,9 +2703,7 @@ async function searchView() {
   async function go() {
 
     if (!token()) {
-
       return loginView();
-
     }
 
 
@@ -2894,17 +2749,13 @@ async function searchView() {
 
 
       const cases =
-        Array.isArray(
-          d.cases
-        )
+        Array.isArray(d.cases)
           ? d.cases
           : [];
 
 
       const powers =
-        Array.isArray(
-          d.powers
-        )
+        Array.isArray(d.powers)
           ? d.powers
           : [];
 
@@ -3098,11 +2949,7 @@ async function searchView() {
       results.innerHTML = `
 
         <div class="error">
-
-          ${esc(
-            error.message
-          )}
-
+          ${esc(error.message)}
         </div>
 
       `;
@@ -3137,17 +2984,17 @@ async function searchView() {
 
 
 /*
-====================================================
+=====================================================
 ROUTER
-====================================================
+=====================================================
 */
 
 function route() {
 
   /*
-  --------------------------------------------
-  أول وأهم نقطة حماية
-  --------------------------------------------
+  -----------------------------------------------
+  لا يوجد Token
+  -----------------------------------------------
   */
 
   if (!token()) {
@@ -3157,27 +3004,12 @@ function route() {
   }
 
 
-  /*
-  --------------------------------------------
-  قراءة الرابط
-  --------------------------------------------
-  */
-
   const r =
     (location.hash || "")
-      .replace(
-        "#",
-        ""
-      )
+      .replace(/^#/, "")
       .trim()
       .toLowerCase();
 
-
-  /*
-  --------------------------------------------
-  Routes
-  --------------------------------------------
-  */
 
   if (
     r === "cases"
@@ -3206,24 +3038,15 @@ function route() {
   }
 
 
-  /*
-  --------------------------------------------
-  أي رابط غير معروف
-  --------------------------------------------
-  يرجع للـ Dashboard
-  طالما المستخدم مسجل دخول.
-  --------------------------------------------
-  */
-
   return dashboard();
 
 }
 
 
 /*
-====================================================
+=====================================================
 HASH CHANGE
-====================================================
+=====================================================
 */
 
 window.addEventListener(
@@ -3237,19 +3060,14 @@ window.addEventListener(
 
 
 /*
-====================================================
-PAGE VISIBILITY
-====================================================
+=====================================================
+VISIBILITY
+=====================================================
 */
 
 document.addEventListener(
   "visibilitychange",
   function () {
-
-    /*
-    لو رجع المستخدم للصفحة
-    نتأكد أن الجلسة ما زالت موجودة.
-    */
 
     if (
       document.visibilityState ===
@@ -3269,9 +3087,38 @@ document.addEventListener(
 
 
 /*
-====================================================
-START
-====================================================
+=====================================================
+PAGE SHOW
+=====================================================
+
+مهم لحالات Browser Back/Forward Cache.
+=====================================================
 */
+
+window.addEventListener(
+  "pageshow",
+  function (event) {
+
+    if (event.persisted) {
+
+      clearSession();
+
+      removeHash();
+
+      loginView();
+
+    }
+
+  }
+);
+
+
+/*
+=====================================================
+START
+=====================================================
+*/
+
+tokenValue = "";
 
 route();
