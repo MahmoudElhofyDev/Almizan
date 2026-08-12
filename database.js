@@ -1,11 +1,15 @@
 const { Pool } = require("pg");
 
 const databaseUrl = process.env.DATABASE_URL;
+
 if (!databaseUrl) {
-  throw new Error("DATABASE_URL is missing. Add it to your hosting Environment Variables or .env file.");
+  throw new Error(
+    "DATABASE_URL is missing. Add it to Railway Environment Variables."
+  );
 }
 
-const useSSL = String(process.env.PGSSL || "true").toLowerCase() !== "false";
+const useSSL =
+  String(process.env.PGSSL || "true").toLowerCase() !== "false";
 
 const pool = new Pool({
   connectionString: databaseUrl,
@@ -46,11 +50,23 @@ async function ensureDatabase() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
-    CREATE INDEX IF NOT EXISTS idx_cases_file_number ON cases(file_number);
-    CREATE INDEX IF NOT EXISTS idx_cases_client_name ON cases(client_name);
-    CREATE INDEX IF NOT EXISTS idx_powers_file_number ON powers(file_number);
-    CREATE INDEX IF NOT EXISTS idx_powers_client_name ON powers(client_name);
-    CREATE INDEX IF NOT EXISTS idx_powers_power_number ON powers(power_number);
+    CREATE INDEX IF NOT EXISTS idx_cases_file_number
+      ON cases(file_number);
+
+    CREATE INDEX IF NOT EXISTS idx_cases_client_name
+      ON cases(client_name);
+
+    CREATE INDEX IF NOT EXISTS idx_powers_file_number
+      ON powers(file_number);
+
+    CREATE INDEX IF NOT EXISTS idx_powers_client_name
+      ON powers(client_name);
+
+    CREATE INDEX IF NOT EXISTS idx_powers_power_number
+      ON powers(power_number);
+
+    CREATE INDEX IF NOT EXISTS idx_powers_authority
+      ON powers(documentation_authority);
   `);
 }
 
@@ -58,4 +74,9 @@ async function close() {
   await pool.end();
 }
 
-module.exports = { pool, query, ensureDatabase, close };
+module.exports = {
+  pool,
+  query,
+  ensureDatabase,
+  close
+};
