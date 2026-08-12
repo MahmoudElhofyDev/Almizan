@@ -20,11 +20,9 @@ const JWT_SECRET =
 const FRONTEND_DIR = __dirname;
 
 
-/*
-====================================================
- MIDDLEWARE
-====================================================
-*/
+/* =====================================================
+   MIDDLEWARE
+===================================================== */
 
 app.use(cors());
 
@@ -42,61 +40,36 @@ app.use(
 );
 
 
-/*
-====================================================
- EXCEL UPLOAD
-====================================================
-*/
+/* =====================================================
+   EXCEL UPLOAD
+===================================================== */
 
 const upload = multer({
-
   storage: multer.memoryStorage(),
 
   limits: {
     fileSize: 20 * 1024 * 1024
   }
-
 });
 
 
-/*
-====================================================
- PASSWORD
-====================================================
-*/
+/* =====================================================
+   PASSWORD
+===================================================== */
 
 function hashPassword(password) {
-
   return crypto
     .createHash("sha256")
     .update(String(password))
     .digest("hex");
-
 }
 
 
-/*
-====================================================
- TEXT NORMALIZATION
-====================================================
-
-يحل مشاكل البحث العربي:
-
-أ / إ / آ / ٱ  -> ا
-ى             -> ي
-ة             -> ه
-ؤ             -> و
-ئ             -> ي
-
-ويزيل:
-- التشكيل
-- المسافات الزائدة
-- الرموز
-====================================================
-*/
+/* =====================================================
+   TEXT NORMALIZATION
+===================================================== */
 
 function normalizeText(value) {
-
   let text = String(value ?? "");
 
   text = text
@@ -104,13 +77,11 @@ function normalizeText(value) {
     .toLowerCase()
     .trim();
 
-
   // إزالة التشكيل
   text = text.replace(
     /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/g,
     ""
   );
-
 
   // توحيد الحروف العربية
   text = text
@@ -120,62 +91,40 @@ function normalizeText(value) {
     .replace(/ؤ/g, "و")
     .replace(/ئ/g, "ي");
 
-
   // إزالة التطويل
   text = text.replace(/ـ/g, "");
-
 
   // توحيد المسافات
   text = text.replace(/\s+/g, " ");
 
-
   return text.trim();
-
 }
 
 
-/*
-====================================================
- EXCEL HEADER NORMALIZATION
-====================================================
-*/
+/* =====================================================
+   EXCEL HELPERS
+===================================================== */
 
 function normalizeKey(key) {
-
   return normalizeText(key);
-
 }
 
 
 function normalizeRow(row) {
-
   const out = {};
 
   for (const [key, value] of Object.entries(row || {})) {
-
     out[normalizeKey(key)] =
       String(value ?? "").trim();
-
   }
 
   return out;
-
 }
 
 
-/*
-====================================================
- EXCEL HELPERS
-====================================================
-*/
-
 function pick(row, keys) {
-
   for (const key of keys) {
-
-    const normalized =
-      normalizeKey(key);
-
+    const normalized = normalizeKey(key);
 
     if (
       Object.prototype.hasOwnProperty.call(
@@ -183,168 +132,122 @@ function pick(row, keys) {
         normalized
       )
     ) {
-
       const value =
         String(row[normalized] ?? "").trim();
 
-
       if (value) {
-
         return value;
-
       }
-
     }
-
   }
 
   return "";
-
 }
 
 
 function anyValue(row) {
-
   return Object.values(row).some(
     value =>
       String(value ?? "").trim() !== ""
   );
-
 }
 
 
 function caseFile(row) {
-
-  return pick(
-    row,
-    [
-      "رقم_الملف",
-      "رقم الملف",
-      "م",
-      "file_number",
-      "filenumber",
-      "file number"
-    ]
-  );
-
+  return pick(row, [
+    "رقم_الملف",
+    "رقم الملف",
+    "م",
+    "file_number",
+    "filenumber",
+    "file number"
+  ]);
 }
 
 
 function client(row) {
-
-  return pick(
-    row,
-    [
-      "اسم_الموكل",
-      "اسم الموكل",
-      "اسم الموكل ",
-      "client_name",
-      "clientname",
-      "client name"
-    ]
-  );
-
+  return pick(row, [
+    "اسم_الموكل",
+    "اسم الموكل",
+    "اسم الموكل ",
+    "client_name",
+    "clientname",
+    "client name"
+  ]);
 }
 
 
 function powerNumber(row) {
-
-  return pick(
-    row,
-    [
-      "رقم_التوكيل",
-      "رقم التوكيل",
-      "power_number",
-      "powernumber",
-      "power number"
-    ]
-  );
-
+  return pick(row, [
+    "رقم_التوكيل",
+    "رقم التوكيل",
+    "power_number",
+    "powernumber",
+    "power number"
+  ]);
 }
 
 
 function authority(row) {
-
-  return pick(
-    row,
-    [
-      "جهة_إصدار",
-      "جهة إصدار",
-      "جهة_التوثيق",
-      "جهة التوثيق",
-      "documentation_authority",
-      "authority",
-      "documentation authority"
-    ]
-  );
-
+  return pick(row, [
+    "جهة_إصدار",
+    "جهة إصدار",
+    "جهة_التوثيق",
+    "جهة التوثيق",
+    "documentation_authority",
+    "authority",
+    "documentation authority"
+  ]);
 }
 
 
-/*
-====================================================
- AUTH
-====================================================
-*/
+/* =====================================================
+   AUTH
+===================================================== */
 
 function auth(req, res, next) {
-
   const header =
     req.headers.authorization || "";
 
-
   if (!header.startsWith("Bearer ")) {
-
     return res.status(401).json({
       message: "يرجى تسجيل الدخول"
     });
-
   }
 
-
   try {
-
-    req.user =
-      jwt.verify(
-        header.slice(7),
-        JWT_SECRET
-      );
-
+    req.user = jwt.verify(
+      header.slice(7),
+      JWT_SECRET
+    );
 
     next();
-
   } catch {
-
     return res.status(401).json({
       message:
         "انتهت جلسة الدخول. سجل الدخول مرة أخرى."
     });
-
   }
-
 }
 
 
-/*
-====================================================
- ADMIN
-====================================================
-*/
+/* =====================================================
+   ADMIN
+===================================================== */
 
 async function ensureAdmin() {
-
-  const r =
-    await query(
-      "SELECT id FROM users WHERE username=$1",
-      ["admin"]
-    );
-
+  const r = await query(
+    "SELECT id FROM users WHERE username=$1",
+    ["admin"]
+  );
 
   if (!r.rowCount) {
-
     await query(
       `
-      INSERT INTO users(username,password_hash)
+      INSERT INTO users(
+        username,
+        password_hash
+      )
       VALUES($1,$2)
       `,
       [
@@ -352,67 +255,52 @@ async function ensureAdmin() {
         hashPassword("admin123")
       ]
     );
-
   }
-
 }
 
 
-/*
-====================================================
- LOGIN
-====================================================
-*/
+/* =====================================================
+   LOGIN
+===================================================== */
 
 app.post(
   "/api/login",
   async (req, res) => {
-
     try {
-
       const username =
         String(
           req.body.username || ""
         ).trim();
-
 
       const password =
         String(
           req.body.password || ""
         );
 
+      const r = await query(
+        `
+        SELECT
+          id,
+          username,
+          password_hash
+        FROM users
+        WHERE username=$1
+        `,
+        [username]
+      );
 
-      const r =
-        await query(
-          `
-          SELECT
-            id,
-            username,
-            password_hash
-          FROM users
-          WHERE username=$1
-          `,
-          [username]
-        );
-
-
-      const user =
-        r.rows[0];
-
+      const user = r.rows[0];
 
       if (
         !user ||
         hashPassword(password) !==
           user.password_hash
       ) {
-
         return res.status(401).json({
           message:
             "اسم المستخدم أو كلمة المرور غير صحيحة"
         });
-
       }
-
 
       const token =
         jwt.sign(
@@ -426,7 +314,6 @@ app.post(
           }
         );
 
-
       res.json({
         success: true,
         token,
@@ -436,38 +323,29 @@ app.post(
         }
       });
 
-
     } catch (e) {
-
       console.error(e);
 
       res.status(500).json({
         message:
           "حدث خطأ أثناء تسجيل الدخول"
       });
-
     }
-
   }
 );
 
 
-/*
-====================================================
- DASHBOARD
-====================================================
-*/
+/* =====================================================
+   DASHBOARD
+===================================================== */
 
 app.get(
   "/api/dashboard",
   auth,
   async (req, res) => {
-
     try {
-
       const [c, p] =
         await Promise.all([
-
           query(
             "SELECT COUNT(*)::int AS count FROM cases"
           ),
@@ -475,44 +353,30 @@ app.get(
           query(
             "SELECT COUNT(*)::int AS count FROM powers"
           )
-
         ]);
 
-
       res.json({
-
-        cases:
-          c.rows[0].count,
-
-        powers:
-          p.rows[0].count
-
+        cases: c.rows[0].count,
+        powers: p.rows[0].count
       });
 
-
     } catch (e) {
-
       console.error(e);
 
       res.status(500).json({
         message:
           "تعذر قراءة قاعدة البيانات"
       });
-
     }
-
   }
 );
 
 
-/*
-====================================================
- PAGINATION
-====================================================
-*/
+/* =====================================================
+   PAGINATION
+===================================================== */
 
 function pagination(req, total) {
-
   const page =
     Math.max(
       1,
@@ -521,7 +385,6 @@ function pagination(req, total) {
         10
       ) || 1
     );
-
 
   const limit =
     Math.min(
@@ -535,130 +398,102 @@ function pagination(req, total) {
       )
     );
 
-
   const pages =
     Math.max(
       1,
       Math.ceil(total / limit)
     );
 
-
   const safePage =
-    Math.min(
-      page,
-      pages
-    );
-
+    Math.min(page, pages);
 
   return {
-
     page: safePage,
-
     limit,
-
     pages,
-
     offset:
       (safePage - 1) * limit
-
   };
-
 }
 
 
-/*
-====================================================
- POSTGRES SEARCH NORMALIZATION
-====================================================
-*/
+/* =====================================================
+   SQL ARABIC NORMALIZATION
+===================================================== */
 
 function sqlNormalize(column) {
-
   return `
     regexp_replace(
-      translate(
-        lower(coalesce(${column}, '')),
-        'أإآٱىةؤئ',
-        'اااا يهوي'
+      regexp_replace(
+        regexp_replace(
+          regexp_replace(
+            regexp_replace(
+              regexp_replace(
+                lower(coalesce(${column}, '')),
+                '[أإآٱ]',
+                'ا',
+                'g'
+              ),
+              'ى',
+              'ي',
+              'g'
+            ),
+            'ة',
+            'ه',
+            'g'
+          ),
+          'ؤ',
+          'و',
+          'g'
+        ),
+        'ئ',
+        'ي',
+        'g'
       ),
       '[^[:alnum:]ء-ي]+',
       ' ',
       'g'
     )
   `;
-
 }
 
 
-/*
-====================================================
- SMART SEARCH CONDITIONS
-====================================================
-
-كل كلمة من البحث لازم تظهر في واحد على الأقل
-من أعمدة السجل.
-
-مثال:
-
-"محمد احمد"
-
-يقدر يجيب:
-
-محمد أحمد
-
-أحمد محمد
-
-محمد احمد حسن
-
-====================================================
-*/
+/* =====================================================
+   SMART SEARCH
+===================================================== */
 
 function buildSmartSearch(
   search,
   columns,
   params
 ) {
-
   const normalized =
     normalizeText(search);
 
-
   if (!normalized) {
-
     return "";
-
   }
-
 
   const words =
     normalized
-      .split(" ")
+      .split(/\s+/)
       .map(x => x.trim())
       .filter(Boolean);
 
-
   if (!words.length) {
-
     return "";
-
   }
-
 
   const groups = [];
 
-
   for (const word of words) {
-
     const parameter =
       `%${word}%`;
 
-
     params.push(parameter);
-
 
     const index =
       params.length;
-
 
     const conditions =
       columns.map(
@@ -666,69 +501,50 @@ function buildSmartSearch(
           `${sqlNormalize(column)} LIKE $${index}`
       );
 
-
     groups.push(
       `(${conditions.join(" OR ")})`
     );
-
   }
 
-
   return groups.join(" AND ");
-
 }
 
 
-/*
-====================================================
- CASES
-====================================================
-*/
+/* =====================================================
+   CASES
+===================================================== */
 
 app.get(
   "/api/cases",
   auth,
   async (req, res) => {
-
     try {
-
       const q =
         String(
           req.query.q || ""
         ).trim();
-
 
       const incomplete =
         String(
           req.query.incomplete || "0"
         ) === "1";
 
-
       if (!q && !incomplete) {
-
         return res.json({
-
           data: [],
-
           pagination: {
             page: 1,
             limit: 50,
             total: 0,
             pages: 1
           }
-
         });
-
       }
 
-
       const conditions = [];
-
       const params = [];
 
-
       if (q) {
-
         const search =
           buildSmartSearch(
             q,
@@ -739,33 +555,24 @@ app.get(
             params
           );
 
-
         if (search) {
-
           conditions.push(search);
-
         }
-
       }
 
-
       if (incomplete) {
-
         conditions.push(`
           (
             btrim(file_number)='' OR
             btrim(client_name)=''
           )
         `);
-
       }
-
 
       const where =
         conditions.length
           ? `WHERE ${conditions.join(" AND ")}`
           : "";
-
 
       const count =
         await query(
@@ -777,17 +584,14 @@ app.get(
           params
         );
 
-
       const total =
         count.rows[0].count;
-
 
       const pg =
         pagination(
           req,
           total
         );
-
 
       const data =
         await query(
@@ -811,58 +615,38 @@ app.get(
           ]
         );
 
-
       res.json({
-
-        data:
-          data.rows,
+        data: data.rows,
 
         pagination: {
-
-          page:
-            pg.page,
-
-          limit:
-            pg.limit,
-
+          page: pg.page,
+          limit: pg.limit,
           total,
-
-          pages:
-            pg.pages
-
+          pages: pg.pages
         }
-
       });
 
-
     } catch (e) {
-
       console.error(e);
 
       res.status(500).json({
         message:
           "تعذر تحميل ملفات الحفظ"
       });
-
     }
-
   }
 );
 
 
-/*
-====================================================
- LAST CASE FILE
-====================================================
-*/
+/* =====================================================
+   LAST CASE FILE
+===================================================== */
 
 app.get(
   "/api/cases/last-file",
   auth,
   async (req, res) => {
-
     try {
-
       const r =
         await query(`
           SELECT
@@ -883,64 +667,49 @@ app.get(
           FROM cases
         `);
 
-
       const last =
         Number(
           r.rows[0].last || 0
         );
 
-
       res.json({
-
         last,
-
         next:
           last > 0
             ? last + 1
             : 1
-
       });
 
-
     } catch (e) {
-
       console.error(e);
 
       res.status(500).json({
         message:
           "تعذر حساب رقم الملف التالي"
       });
-
     }
-
   }
 );
 
 
-/*
-====================================================
- ADD CASE
-====================================================
-*/
+/* =====================================================
+   ADD CASE
+===================================================== */
 
 app.post(
   "/api/cases",
   auth,
   async (req, res) => {
-
     try {
-
       const fileNumber =
         String(
           req.body.file_number ?? ""
         ).trim();
 
-
       const clientName =
         String(
           req.body.client_name ?? ""
         ).trim();
-
 
       const r =
         await query(
@@ -963,58 +732,43 @@ app.post(
           ]
         );
 
-
       res.status(201).json(
         r.rows[0]
       );
 
-
     } catch (e) {
-
       console.error(e);
 
       res.status(500).json({
         message:
           "تعذر إضافة ملف الحفظ"
       });
-
     }
-
   }
 );
 
 
-/*
-====================================================
- EDIT CASE
-====================================================
-*/
+/* =====================================================
+   EDIT CASE
+===================================================== */
 
 app.put(
   "/api/cases/:id",
   auth,
   async (req, res) => {
-
     try {
-
       const id =
-        Number(
-          req.params.id
-        );
-
+        Number(req.params.id);
 
       const r =
         await query(
           `
           UPDATE cases
-
           SET
             file_number=$1,
             client_name=$2,
             updated_at=NOW()
-
           WHERE id=$3
-
           RETURNING
             id,
             file_number,
@@ -1035,50 +789,38 @@ app.put(
           ]
         );
 
-
       if (!r.rowCount) {
-
         return res.status(404).json({
           message:
             "ملف الحفظ غير موجود"
         });
-
       }
-
 
       res.json(
         r.rows[0]
       );
 
-
     } catch (e) {
-
       console.error(e);
 
       res.status(500).json({
         message:
           "تعذر تعديل ملف الحفظ"
       });
-
     }
-
   }
 );
 
 
-/*
-====================================================
- DELETE CASE
-====================================================
-*/
+/* =====================================================
+   DELETE CASE
+===================================================== */
 
 app.delete(
   "/api/cases/:id",
   auth,
   async (req, res) => {
-
     try {
-
       const r =
         await query(
           "DELETE FROM cases WHERE id=$1",
@@ -1089,71 +831,45 @@ app.delete(
           ]
         );
 
-
       if (!r.rowCount) {
-
         return res.status(404).json({
           message:
             "ملف الحفظ غير موجود"
         });
-
       }
-
 
       res.json({
         success: true
       });
 
-
     } catch (e) {
-
       console.error(e);
 
       res.status(500).json({
         message:
           "تعذر حذف ملف الحفظ"
       });
-
     }
-
   }
 );
 
 
-/*
-====================================================
- IMPORT CASES
-====================================================
-
-المهم هنا:
-
-لو رقم الملف موجود:
-لا يتم إدخاله مرة ثانية.
-
-ولو نفس الرقم موجود مرتين داخل Excel:
-الأول يدخل،
-والثاني يتحسب مكرر.
-
-====================================================
-*/
+/* =====================================================
+   IMPORT CASES
+===================================================== */
 
 app.post(
   "/api/import/cases",
   auth,
   upload.single("file"),
   async (req, res) => {
-
     try {
-
       if (!req.file) {
-
         return res.status(400).json({
           message:
             "لم يتم اختيار ملف"
         });
-
       }
-
 
       const workbook =
         XLSX.read(
@@ -1163,22 +879,17 @@ app.post(
           }
         );
 
-
       if (!workbook.SheetNames.length) {
-
         return res.status(400).json({
           message:
             "ملف Excel فارغ"
         });
-
       }
-
 
       const sheet =
         workbook.Sheets[
           workbook.SheetNames[0]
         ];
-
 
       const rows =
         XLSX.utils.sheet_to_json(
@@ -1188,56 +899,55 @@ app.post(
           }
         );
 
-
       let inserted = 0;
-
       let skipped = 0;
-
       let duplicate = 0;
-
       let incomplete = 0;
 
+      // منع التكرار داخل نفس ملف Excel
+      const importedFileNumbers =
+        new Set();
 
       for (const raw of rows) {
-
         const row =
           normalizeRow(raw);
 
-
         if (!anyValue(row)) {
-
           skipped++;
-
           continue;
-
         }
-
 
         const fileNumber =
           caseFile(row);
 
-
         const clientName =
           client(row);
-
 
         if (
           !fileNumber ||
           !clientName
         ) {
-
           incomplete++;
-
         }
 
-
-        /*
-        ---------------------------------------------
-        لو عندنا رقم ملف، نتحقق من وجوده
-        ---------------------------------------------
-        */
-
         if (fileNumber) {
+          const normalizedFile =
+            normalizeText(
+              fileNumber
+            ).replace(/\s+/g, "");
+
+          if (
+            importedFileNumbers.has(
+              normalizedFile
+            )
+          ) {
+            duplicate++;
+            continue;
+          }
+
+          importedFileNumbers.add(
+            normalizedFile
+          );
 
           const dup =
             await query(
@@ -1246,42 +956,48 @@ app.post(
               FROM cases
               WHERE
                 regexp_replace(
-                  lower(trim(file_number)),
+                  regexp_replace(
+                    regexp_replace(
+                      lower(trim(file_number)),
+                      '[أإآٱ]',
+                      'ا',
+                      'g'
+                    ),
+                    'ى',
+                    'ي',
+                    'g'
+                  ),
                   '[^[:alnum:]ء-ي]+',
                   '',
                   'g'
                 )
                 =
                 regexp_replace(
-                  lower(trim($1)),
+                  regexp_replace(
+                    regexp_replace(
+                      lower(trim($1)),
+                      '[أإآٱ]',
+                      'ا',
+                      'g'
+                    ),
+                    'ى',
+                    'ي',
+                    'g'
+                  ),
                   '[^[:alnum:]ء-ي]+',
                   '',
                   'g'
                 )
               LIMIT 1
               `,
-              [
-                fileNumber
-              ]
+              [fileNumber]
             );
 
-
           if (dup.rowCount) {
-
             duplicate++;
-
             continue;
-
           }
-
         }
-
-
-        /*
-        ---------------------------------------------
-        إضافة السجل
-        ---------------------------------------------
-        */
 
         await query(
           `
@@ -1297,100 +1013,65 @@ app.post(
           ]
         );
 
-
         inserted++;
-
       }
 
-
       res.json({
-
         success: true,
-
-        total:
-          rows.length,
-
+        total: rows.length,
         inserted,
-
         skipped,
-
         duplicate,
-
         incomplete
-
       });
 
-
     } catch (e) {
-
       console.error(e);
 
       res.status(500).json({
         message:
           "حدث خطأ أثناء استيراد ملفات الحفظ"
       });
-
     }
-
   }
 );
 
 
-/*
-====================================================
- POWERS
-====================================================
-*/
+/* =====================================================
+   POWERS
+===================================================== */
 
 app.get(
   "/api/powers",
   auth,
   async (req, res) => {
-
     try {
-
       const q =
         String(
           req.query.q || ""
         ).trim();
-
 
       const incomplete =
         String(
           req.query.incomplete || "0"
         ) === "1";
 
-
       if (!q && !incomplete) {
-
         return res.json({
-
           data: [],
-
           pagination: {
-
             page: 1,
-
             limit: 50,
-
             total: 0,
-
             pages: 1
-
           }
-
         });
-
       }
 
-
       const conditions = [];
-
       const params = [];
 
-
       if (q) {
-
         const search =
           buildSmartSearch(
             q,
@@ -1403,37 +1084,26 @@ app.get(
             params
           );
 
-
         if (search) {
-
           conditions.push(search);
-
         }
-
       }
 
-
       if (incomplete) {
-
         conditions.push(`
-
           (
             btrim(file_number)='' OR
             btrim(client_name)='' OR
             btrim(power_number)='' OR
             btrim(documentation_authority)=''
           )
-
         `);
-
       }
-
 
       const where =
         conditions.length
           ? `WHERE ${conditions.join(" AND ")}`
           : "";
-
 
       const count =
         await query(
@@ -1445,17 +1115,14 @@ app.get(
           params
         );
 
-
       const total =
         count.rows[0].count;
-
 
       const pg =
         pagination(
           req,
           total
         );
-
 
       const data =
         await query(
@@ -1468,15 +1135,10 @@ app.get(
             documentation_authority,
             created_at,
             updated_at
-
           FROM powers
-
           ${where}
-
           ORDER BY id DESC
-
           LIMIT $${params.length + 1}
-
           OFFSET $${params.length + 2}
           `,
           [
@@ -1486,58 +1148,38 @@ app.get(
           ]
         );
 
-
       res.json({
-
-        data:
-          data.rows,
+        data: data.rows,
 
         pagination: {
-
-          page:
-            pg.page,
-
-          limit:
-            pg.limit,
-
+          page: pg.page,
+          limit: pg.limit,
           total,
-
-          pages:
-            pg.pages
-
+          pages: pg.pages
         }
-
       });
 
-
     } catch (e) {
-
       console.error(e);
 
       res.status(500).json({
         message:
           "تعذر تحميل التوكيلات"
       });
-
     }
-
   }
 );
 
 
-/*
-====================================================
- LAST POWER FILE
-====================================================
-*/
+/* =====================================================
+   LAST POWER FILE
+===================================================== */
 
 app.get(
   "/api/powers/last-file",
   auth,
   async (req, res) => {
-
     try {
-
       const r =
         await query(`
           SELECT
@@ -1558,85 +1200,61 @@ app.get(
                 0
               )
             ) AS last
-
           FROM powers
         `);
-
 
       const last =
         Number(
           r.rows[0].last || 2431
         );
 
-
       res.json({
-
         last,
-
-        next:
-          last + 1
-
+        next: last + 1
       });
 
-
     } catch (e) {
-
       console.error(e);
 
       res.status(500).json({
         message:
           "تعذر حساب رقم الملف التالي"
       });
-
     }
-
   }
 );
 
 
-/*
-====================================================
- ADD POWER
-====================================================
-*/
+/* =====================================================
+   ADD POWER
+===================================================== */
 
 app.post(
   "/api/powers",
   auth,
   async (req, res) => {
-
     try {
-
       const fileNumber =
         String(
           req.body.file_number ?? ""
         ).trim();
-
 
       const clientName =
         String(
           req.body.client_name ?? ""
         ).trim();
 
-
       const powerNumber =
         String(
           req.body.power_number ?? ""
         ).trim();
-
 
       const documentationAuthority =
         String(
           req.body.documentation_authority ?? ""
         ).trim();
 
-
-      /*
-      منع رقم التوكيل المكرر
-      */
-
       if (powerNumber) {
-
         const duplicate =
           await query(
             `
@@ -1648,25 +1266,16 @@ app.post(
               lower(trim($1))
             LIMIT 1
             `,
-            [
-              powerNumber
-            ]
+            [powerNumber]
           );
 
-
         if (duplicate.rowCount) {
-
           return res.status(409).json({
-
             message:
               "رقم التوكيل موجود بالفعل ولا يمكن تكراره."
-
           });
-
         }
-
       }
-
 
       const r =
         await query(
@@ -1677,9 +1286,7 @@ app.post(
             power_number,
             documentation_authority
           )
-
           VALUES($1,$2,$3,$4)
-
           RETURNING
             id,
             file_number,
@@ -1697,90 +1304,65 @@ app.post(
           ]
         );
 
-
       res.status(201).json(
         r.rows[0]
       );
 
-
     } catch (e) {
-
       console.error(e);
 
       res.status(500).json({
         message:
           "تعذر إضافة التوكيل"
       });
-
     }
-
   }
 );
 
 
-/*
-====================================================
- EDIT POWER
-====================================================
-*/
+/* =====================================================
+   EDIT POWER
+===================================================== */
 
 app.put(
   "/api/powers/:id",
   auth,
   async (req, res) => {
-
     try {
-
       const id =
-        Number(
-          req.params.id
-        );
-
+        Number(req.params.id);
 
       const fileNumber =
         String(
           req.body.file_number ?? ""
         ).trim();
 
-
       const clientName =
         String(
           req.body.client_name ?? ""
         ).trim();
-
 
       const powerNumber =
         String(
           req.body.power_number ?? ""
         ).trim();
 
-
       const documentationAuthority =
         String(
           req.body.documentation_authority ?? ""
         ).trim();
 
-
-      /*
-      منع التكرار مع استثناء السجل الحالي
-      */
-
       if (powerNumber) {
-
         const duplicate =
           await query(
             `
             SELECT id
-
             FROM powers
-
             WHERE
               lower(trim(power_number))
               =
               lower(trim($1))
-
               AND id <> $2
-
             LIMIT 1
             `,
             [
@@ -1789,35 +1371,25 @@ app.put(
             ]
           );
 
-
         if (duplicate.rowCount) {
-
           return res.status(409).json({
-
             message:
               "رقم التوكيل موجود بالفعل في سجل آخر."
-
           });
-
         }
-
       }
-
 
       const r =
         await query(
           `
           UPDATE powers
-
           SET
             file_number=$1,
             client_name=$2,
             power_number=$3,
             documentation_authority=$4,
             updated_at=NOW()
-
           WHERE id=$5
-
           RETURNING
             id,
             file_number,
@@ -1836,50 +1408,38 @@ app.put(
           ]
         );
 
-
       if (!r.rowCount) {
-
         return res.status(404).json({
           message:
             "التوكيل غير موجود"
         });
-
       }
-
 
       res.json(
         r.rows[0]
       );
 
-
     } catch (e) {
-
       console.error(e);
 
       res.status(500).json({
         message:
           "تعذر تعديل التوكيل"
       });
-
     }
-
   }
 );
 
 
-/*
-====================================================
- DELETE POWER
-====================================================
-*/
+/* =====================================================
+   DELETE POWER
+===================================================== */
 
 app.delete(
   "/api/powers/:id",
   auth,
   async (req, res) => {
-
     try {
-
       const r =
         await query(
           "DELETE FROM powers WHERE id=$1",
@@ -1890,60 +1450,45 @@ app.delete(
           ]
         );
 
-
       if (!r.rowCount) {
-
         return res.status(404).json({
           message:
             "التوكيل غير موجود"
         });
-
       }
-
 
       res.json({
         success: true
       });
 
-
     } catch (e) {
-
       console.error(e);
 
       res.status(500).json({
         message:
           "تعذر حذف التوكيل"
       });
-
     }
-
   }
 );
 
 
-/*
-====================================================
- IMPORT POWERS
-====================================================
-*/
+/* =====================================================
+   IMPORT POWERS
+===================================================== */
 
 app.post(
   "/api/import/powers",
   auth,
   upload.single("file"),
   async (req, res) => {
-
     try {
-
       if (!req.file) {
-
         return res.status(400).json({
           message:
             "لم يتم اختيار ملف"
         });
-
       }
-
 
       const workbook =
         XLSX.read(
@@ -1953,22 +1498,17 @@ app.post(
           }
         );
 
-
       if (!workbook.SheetNames.length) {
-
         return res.status(400).json({
           message:
             "ملف Excel فارغ"
         });
-
       }
-
 
       const sheet =
         workbook.Sheets[
           workbook.SheetNames[0]
         ];
-
 
       const rows =
         XLSX.utils.sheet_to_json(
@@ -1978,46 +1518,35 @@ app.post(
           }
         );
 
-
       let inserted = 0;
-
       let skipped = 0;
-
       let duplicate = 0;
-
       let incomplete = 0;
 
+      // منع التكرار داخل نفس Excel
+      const importedPowerNumbers =
+        new Set();
 
       for (const raw of rows) {
-
         const row =
           normalizeRow(raw);
 
-
         if (!anyValue(row)) {
-
           skipped++;
-
           continue;
-
         }
-
 
         const fileNumber =
           caseFile(row);
 
-
         const clientName =
           client(row);
-
 
         const powerNum =
           powerNumber(row);
 
-
         const authName =
           authority(row);
-
 
         if (
           !fileNumber ||
@@ -2025,56 +1554,50 @@ app.post(
           !powerNum ||
           !authName
         ) {
-
           incomplete++;
-
         }
 
-
-        /*
-        ---------------------------------------------
-        رقم التوكيل موجود بالفعل؟
-        ---------------------------------------------
-        */
-
         if (powerNum) {
+          const normalizedPower =
+            normalizeText(
+              powerNum
+            ).replace(
+              /\s+/g,
+              ""
+            );
+
+          if (
+            importedPowerNumbers.has(
+              normalizedPower
+            )
+          ) {
+            duplicate++;
+            continue;
+          }
+
+          importedPowerNumbers.add(
+            normalizedPower
+          );
 
           const dup =
             await query(
               `
               SELECT id
-
               FROM powers
-
               WHERE
                 lower(trim(power_number))
                 =
                 lower(trim($1))
-
               LIMIT 1
               `,
-              [
-                powerNum
-              ]
+              [powerNum]
             );
 
-
           if (dup.rowCount) {
-
             duplicate++;
-
             continue;
-
           }
-
         }
-
-
-        /*
-        ---------------------------------------------
-        إضافة السجل
-        ---------------------------------------------
-        */
 
         await query(
           `
@@ -2084,7 +1607,6 @@ app.post(
             power_number,
             documentation_authority
           )
-
           VALUES($1,$2,$3,$4)
           `,
           [
@@ -2095,103 +1617,66 @@ app.post(
           ]
         );
 
-
         inserted++;
-
       }
 
-
       res.json({
-
         success: true,
-
-        total:
-          rows.length,
-
+        total: rows.length,
         inserted,
-
         skipped,
-
         duplicate,
-
         incomplete
-
       });
 
-
     } catch (e) {
-
       console.error(e);
 
       res.status(500).json({
         message:
           "حدث خطأ أثناء استيراد التوكيلات"
       });
-
     }
-
   }
 );
 
 
-/*
-====================================================
- SMART GENERAL SEARCH
-====================================================
-*/
+/* =====================================================
+   SMART GENERAL SEARCH
+===================================================== */
 
 app.get(
   "/api/search",
   auth,
   async (req, res) => {
-
     try {
-
       const q =
         String(
           req.query.q || ""
         ).trim();
 
-
       if (!q) {
-
         return res.status(400).json({
           message:
             "اكتب اسم الموكل أو جزءًا منه"
         });
-
       }
-
 
       const normalized =
         normalizeText(q);
 
-
-      const searchWords =
-        normalized
-          .split(" ")
-          .map(x => x.trim())
-          .filter(Boolean);
-
-
-      if (!searchWords.length) {
-
+      if (!normalized) {
         return res.status(400).json({
           message:
             "اكتب كلمة صحيحة للبحث"
         });
-
       }
 
-
-      /*
-      ================================================
-      CASES
-      ================================================
-      */
+      /* ================================
+         CASES
+      ================================= */
 
       const caseParams = [];
-
 
       const caseSearch =
         buildSmartSearch(
@@ -2203,7 +1688,6 @@ app.get(
           caseParams
         );
 
-
       const cases =
         await query(
           `
@@ -2212,27 +1696,19 @@ app.get(
             file_number,
             client_name,
             created_at
-
           FROM cases
-
           WHERE ${caseSearch}
-
           ORDER BY id DESC
-
           LIMIT 200
           `,
           caseParams
         );
 
-
-      /*
-      ================================================
-      POWERS
-      ================================================
-      */
+      /* ================================
+         POWERS
+      ================================= */
 
       const powerParams = [];
-
 
       const powerSearch =
         buildSmartSearch(
@@ -2246,7 +1722,6 @@ app.get(
           powerParams
         );
 
-
       const powers =
         await query(
           `
@@ -2257,23 +1732,16 @@ app.get(
             power_number,
             documentation_authority,
             created_at
-
           FROM powers
-
           WHERE ${powerSearch}
-
           ORDER BY id DESC
-
           LIMIT 200
           `,
           powerParams
         );
 
-
       res.json({
-
         query: q,
-
         normalized,
 
         cases:
@@ -2281,74 +1749,91 @@ app.get(
 
         powers:
           powers.rows
-
       });
 
-
     } catch (e) {
-
       console.error(e);
 
       res.status(500).json({
         message:
           "تعذر تنفيذ البحث العام"
       });
-
     }
-
   }
 );
 
 
+/* =====================================================
+   CLEAR OLD DATA
+===================================================== */
+
 /*
-====================================================
- HEALTH
-====================================================
+  API اختيارية لمسح البيانات القديمة.
+  محمية بتسجيل الدخول.
+
+  استخدمها فقط لو محتاج تمسح كل
+  ملفات الحفظ والتوكيلات.
 */
+
+app.delete(
+  "/api/data/clear",
+  auth,
+  async (req, res) => {
+    try {
+      await query(
+        "TRUNCATE TABLE cases, powers RESTART IDENTITY"
+      );
+
+      res.json({
+        success: true,
+        message:
+          "تم حذف جميع ملفات الحفظ والتوكيلات"
+      });
+
+    } catch (e) {
+      console.error(e);
+
+      res.status(500).json({
+        message:
+          "تعذر حذف البيانات القديمة"
+      });
+    }
+  }
+);
+
+
+/* =====================================================
+   HEALTH
+===================================================== */
 
 app.get(
   "/api/health",
   async (req, res) => {
-
     try {
-
       await query(
         "SELECT 1"
       );
 
-
       res.json({
-
         ok: true,
-
         database:
           "connected"
-
       });
-
 
     } catch {
-
       res.status(503).json({
-
         ok: false,
-
         database:
           "disconnected"
-
       });
-
     }
-
   }
 );
 
 
-/*
-====================================================
- STATIC FRONTEND
-====================================================
-*/
+/* =====================================================
+   STATIC FRONTEND
+===================================================== */
 
 app.use(
   express.static(
@@ -2360,37 +1845,29 @@ app.use(
 app.get(
   /.*/,
   (req, res) => {
-
     res.sendFile(
       path.join(
         FRONTEND_DIR,
         "index.html"
       )
     );
-
   }
 );
 
 
-/*
-====================================================
- START
-====================================================
-*/
+/* =====================================================
+   START
+===================================================== */
 
 (async () => {
-
   try {
-
     await ensureDatabase();
 
     await ensureAdmin();
 
-
     app.listen(
       PORT,
       () => {
-
         console.log(
           `MIZAN ONLINE running on port ${PORT}`
         );
@@ -2402,20 +1879,15 @@ app.get(
         console.log(
           "Admin: admin / admin123"
         );
-
       }
     );
 
-
   } catch (e) {
-
     console.error(
       "STARTUP ERROR:",
       e
     );
 
     process.exit(1);
-
   }
-
 })();
