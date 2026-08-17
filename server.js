@@ -77,11 +77,13 @@ function normalizeText(value) {
     .toLowerCase()
     .trim();
 
+  // إزالة التشكيل
   text = text.replace(
     /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/g,
     ""
   );
 
+  // توحيد الحروف العربية
   text = text
     .replace(/[أإآٱ]/g, "ا")
     .replace(/ى/g, "ي")
@@ -89,8 +91,13 @@ function normalizeText(value) {
     .replace(/ؤ/g, "و")
     .replace(/ئ/g, "ي");
 
+  // إزالة التطويل
   text = text.replace(/ـ/g, "");
 
+  // إزالة BOM و Zero Width
+  text = text.replace(/[\u200B-\u200D\uFEFF]/g, "");
+
+  // توحيد المسافات
   text = text.replace(/\s+/g, " ");
 
   return text.trim();
@@ -98,25 +105,69 @@ function normalizeText(value) {
 
 
 /* =====================================================
-   EXCEL HELPERS
+   EXCEL KEY NORMALIZATION
+   أقوى من normalizeText العادي
 ===================================================== */
 
 function normalizeKey(key) {
-  return normalizeText(key);
+  let text = normalizeText(key);
+
+  /*
+    توحيد:
+    -
+    _
+    /
+    \
+    .
+    :
+    والمسافات
+
+    مثال:
+
+    جهة إصدار
+    جهة_إصدار
+    جهة-إصدار
+    جهة / إصدار
+
+    كلها تصبح تقريبًا:
+
+    جههاصدار
+  */
+
+  text = text.replace(
+    /[\s_\-\/\\.:|]+/g,
+    ""
+  );
+
+  return text;
 }
 
+
+/* =====================================================
+   NORMALIZE EXCEL ROW
+===================================================== */
 
 function normalizeRow(row) {
   const out = {};
 
   for (const [key, value] of Object.entries(row || {})) {
-    out[normalizeKey(key)] =
+    const normalized = normalizeKey(key);
+
+    if (!normalized) {
+      continue;
+    }
+
+    out[normalized] =
       String(value ?? "").trim();
   }
 
   return out;
 }
 
+
+/* =====================================================
+   PICK VALUE
+===================================================== */
 
 function pick(row, keys) {
   for (const key of keys) {
@@ -141,12 +192,9 @@ function pick(row, keys) {
 }
 
 
-/*
-   مهم:
-   في الاستيراد لا نستخدم anyValue
-   ولا نعمل skip لأي صف بسبب نقص البيانات.
-*/
-
+/* =====================================================
+   CASE FILE
+===================================================== */
 
 function caseFile(row) {
   return pick(row, [
@@ -155,6 +203,7 @@ function caseFile(row) {
     "رقم الملف ",
     "م",
     "رقم",
+    "رقم الملف",
     "file_number",
     "filenumber",
     "file number",
@@ -163,6 +212,10 @@ function caseFile(row) {
   ]);
 }
 
+
+/* =====================================================
+   CLIENT
+===================================================== */
 
 function client(row) {
   return pick(row, [
@@ -178,6 +231,10 @@ function client(row) {
   ]);
 }
 
+
+/* =====================================================
+   POWER NUMBER
+===================================================== */
 
 function powerNumber(row) {
   return pick(row, [
@@ -196,22 +253,46 @@ function powerNumber(row) {
 }
 
 
+/* =====================================================
+   AUTHORITY
+   جهة إصدار / جهة التوثيق
+===================================================== */
+
 function authority(row) {
-  return pick(row, [
-    "جهة_إصدار",
+
+  /*
+    أولًا نحاول الأسماء المعروفة
+  */
+
+  const direct = pick(row, [
+
+    // جهة إصدار
     "جهة إصدار",
     "جهة إصدار ",
-    "جهة_التوثيق",
+    "جهة_إصدار",
+    "جهة-إصدار",
+    "جهه إصدار",
+    "جهه_إصدار",
+    "جهة الاصدار",
+    "جهة_الاصدار",
+    "جهه الاصدار",
+    "جهه_الاصدار",
+
+    // جهة التوثيق
     "جهة التوثيق",
     "جهة التوثيق ",
+    "جهة_التوثيق",
+    "جهة-التوثيق",
     "جهه التوثيق",
     "جهه_التوثيق",
     "جهة التوثيق / الإصدار",
     "جهة التوثيق/الإصدار",
     "جهة التوثيق والاصدار",
     "جهة التوثيق والاصدار ",
+    "جهة التوثيق والاصدار",
     "التوثيق",
-    "جهة",
+
+    // English
     "authority",
     "documentation_authority",
     "documentation authority",
@@ -219,6 +300,76 @@ function authority(row) {
     "issuing_authority",
     "issuing authority"
   ]);
+
+  if (direct !== "") {
+    return direct;
+  }
+
+
+  /*
+    =================================================
+    FALLBACK
+    =================================================
+
+    لو Excel كتب اسم العمود بطريقة مختلفة جدًا،
+    نبحث عن أي مفتاح يحتوي على:
+
+    إصدار / اصدار
+    توثيق
+    issuing
+    documentation
+  */
+
+  for (const [key, value] of Object.entries(row || {})) {
+
+    const normalizedKey =
+      normalizeKey(key);
+
+    const valueText =
+      String(value ?? "").trim();
+
+    if (!valueText) {
+      continue;
+    }
+
+    if (
+      normalizedKey.includes(
+        normalizeKey("جهةإصدار")
+      ) ||
+
+      normalizedKey.includes(
+        normalizeKey("جهةاصدار")
+      ) ||
+
+      normalizedKey.includes(
+        normalizeKey("إصدار")
+      ) ||
+
+      normalizedKey.includes(
+        normalizeKey("اصدار")
+      ) ||
+
+      normalizedKey.includes(
+        normalizeKey("توثيق")
+      ) ||
+
+      normalizedKey.includes(
+        "issuing"
+      ) ||
+
+      normalizedKey.includes(
+        "documentation"
+      ) ||
+
+      normalizedKey.includes(
+        "authority"
+      )
+    ) {
+      return valueText;
+    }
+  }
+
+  return "";
 }
 
 
@@ -227,6 +378,7 @@ function authority(row) {
 ===================================================== */
 
 function auth(req, res, next) {
+
   const header =
     req.headers.authorization || "";
 
@@ -237,6 +389,7 @@ function auth(req, res, next) {
   }
 
   try {
+
     req.user = jwt.verify(
       header.slice(7),
       JWT_SECRET
@@ -245,6 +398,7 @@ function auth(req, res, next) {
     next();
 
   } catch {
+
     return res.status(401).json({
       message:
         "انتهت جلسة الدخول. سجل الدخول مرة أخرى."
@@ -258,12 +412,14 @@ function auth(req, res, next) {
 ===================================================== */
 
 async function ensureAdmin() {
+
   const r = await query(
     "SELECT id FROM users WHERE username=$1",
     ["admin"]
   );
 
   if (!r.rowCount) {
+
     await query(
       `
       INSERT INTO users(
@@ -288,7 +444,9 @@ async function ensureAdmin() {
 app.post(
   "/api/login",
   async (req, res) => {
+
     try {
+
       const username =
         String(
           req.body.username || ""
@@ -318,6 +476,7 @@ app.post(
         hashPassword(password) !==
           user.password_hash
       ) {
+
         return res.status(401).json({
           message:
             "اسم المستخدم أو كلمة المرور غير صحيحة"
@@ -346,6 +505,7 @@ app.post(
       });
 
     } catch (e) {
+
       console.error(e);
 
       res.status(500).json({
@@ -365,9 +525,12 @@ app.get(
   "/api/dashboard",
   auth,
   async (req, res) => {
+
     try {
+
       const [c, p] =
         await Promise.all([
+
           query(
             "SELECT COUNT(*)::int AS count FROM cases"
           ),
@@ -375,6 +538,7 @@ app.get(
           query(
             "SELECT COUNT(*)::int AS count FROM powers"
           )
+
         ]);
 
       res.json({
@@ -383,6 +547,7 @@ app.get(
       });
 
     } catch (e) {
+
       console.error(e);
 
       res.status(500).json({
@@ -399,6 +564,7 @@ app.get(
 ===================================================== */
 
 function pagination(req, total) {
+
   const page =
     Math.max(
       1,
@@ -444,6 +610,7 @@ function pagination(req, total) {
 ===================================================== */
 
 function sqlNormalize(column) {
+
   return `
     regexp_replace(
       regexp_replace(
@@ -489,6 +656,7 @@ function buildSmartSearch(
   columns,
   params
 ) {
+
   const normalized =
     normalizeText(search);
 
@@ -509,6 +677,7 @@ function buildSmartSearch(
   const groups = [];
 
   for (const word of words) {
+
     const parameter =
       `%${word}%`;
 
@@ -540,7 +709,9 @@ app.get(
   "/api/cases",
   auth,
   async (req, res) => {
+
     try {
+
       const q =
         String(
           req.query.q || ""
@@ -552,6 +723,7 @@ app.get(
         ) === "1";
 
       if (!q && !incomplete) {
+
         return res.json({
           data: [],
           pagination: {
@@ -567,6 +739,7 @@ app.get(
       const params = [];
 
       if (q) {
+
         const search =
           buildSmartSearch(
             q,
@@ -583,6 +756,7 @@ app.get(
       }
 
       if (incomplete) {
+
         conditions.push(`
           (
             btrim(file_number)='' OR
@@ -649,6 +823,7 @@ app.get(
       });
 
     } catch (e) {
+
       console.error(e);
 
       res.status(500).json({
@@ -668,7 +843,9 @@ app.get(
   "/api/cases/last-file",
   auth,
   async (req, res) => {
+
     try {
+
       const r =
         await query(`
           SELECT
@@ -703,6 +880,7 @@ app.get(
       });
 
     } catch (e) {
+
       console.error(e);
 
       res.status(500).json({
@@ -722,7 +900,9 @@ app.post(
   "/api/cases",
   auth,
   async (req, res) => {
+
     try {
+
       const fileNumber =
         String(
           req.body.file_number ?? ""
@@ -759,6 +939,7 @@ app.post(
       );
 
     } catch (e) {
+
       console.error(e);
 
       res.status(500).json({
@@ -778,7 +959,9 @@ app.put(
   "/api/cases/:id",
   auth,
   async (req, res) => {
+
     try {
+
       const id =
         Number(req.params.id);
 
@@ -812,6 +995,7 @@ app.put(
         );
 
       if (!r.rowCount) {
+
         return res.status(404).json({
           message:
             "ملف الحفظ غير موجود"
@@ -823,6 +1007,7 @@ app.put(
       );
 
     } catch (e) {
+
       console.error(e);
 
       res.status(500).json({
@@ -842,7 +1027,9 @@ app.delete(
   "/api/cases/:id",
   auth,
   async (req, res) => {
+
     try {
+
       const r =
         await query(
           "DELETE FROM cases WHERE id=$1",
@@ -854,6 +1041,7 @@ app.delete(
         );
 
       if (!r.rowCount) {
+
         return res.status(404).json({
           message:
             "ملف الحفظ غير موجود"
@@ -865,6 +1053,7 @@ app.delete(
       });
 
     } catch (e) {
+
       console.error(e);
 
       res.status(500).json({
@@ -878,7 +1067,6 @@ app.delete(
 
 /* =====================================================
    IMPORT CASES
-   يستورد كل الصفوف بدون تخطي
 ===================================================== */
 
 app.post(
@@ -886,15 +1074,16 @@ app.post(
   auth,
   upload.single("file"),
   async (req, res) => {
+
     try {
 
       if (!req.file) {
+
         return res.status(400).json({
           message:
             "لم يتم اختيار ملف"
         });
       }
-
 
       const workbook =
         XLSX.read(
@@ -905,26 +1094,18 @@ app.post(
           }
         );
 
-
       if (!workbook.SheetNames.length) {
+
         return res.status(400).json({
           message:
             "ملف Excel فارغ"
         });
       }
 
-
       const sheet =
         workbook.Sheets[
           workbook.SheetNames[0]
         ];
-
-
-      /*
-        raw:false
-        حتى نحصل على القيمة الظاهرة في Excel
-        ونحافظ قدر الإمكان على تنسيق الأرقام.
-      */
 
       const rows =
         XLSX.utils.sheet_to_json(
@@ -935,35 +1116,18 @@ app.post(
           }
         );
 
-
       let inserted = 0;
-
-
-      /*
-        مهم جدًا:
-        لا يوجد هنا:
-        - duplicate check
-        - skip
-        - incomplete skip
-        - Set
-        - مقارنة مع قاعدة البيانات
-
-        كل صف يتم إدخاله كما هو.
-      */
 
       for (const raw of rows) {
 
         const row =
           normalizeRow(raw);
 
-
         const fileNumber =
           caseFile(row);
 
-
         const clientName =
           client(row);
-
 
         await query(
           `
@@ -979,10 +1143,8 @@ app.post(
           ]
         );
 
-
         inserted++;
       }
-
 
       res.json({
         success: true,
@@ -992,7 +1154,6 @@ app.post(
         duplicate: 0,
         incomplete: 0
       });
-
 
     } catch (e) {
 
@@ -1020,6 +1181,7 @@ app.get(
   "/api/powers",
   auth,
   async (req, res) => {
+
     try {
 
       const q =
@@ -1027,14 +1189,13 @@ app.get(
           req.query.q || ""
         ).trim();
 
-
       const incomplete =
         String(
           req.query.incomplete || "0"
         ) === "1";
 
-
       if (!q && !incomplete) {
+
         return res.json({
           data: [],
           pagination: {
@@ -1046,10 +1207,8 @@ app.get(
         });
       }
 
-
       const conditions = [];
       const params = [];
-
 
       if (q) {
 
@@ -1065,12 +1224,10 @@ app.get(
             params
           );
 
-
         if (search) {
           conditions.push(search);
         }
       }
-
 
       if (incomplete) {
 
@@ -1084,12 +1241,10 @@ app.get(
         `);
       }
 
-
       const where =
         conditions.length
           ? `WHERE ${conditions.join(" AND ")}`
           : "";
-
 
       const count =
         await query(
@@ -1101,17 +1256,14 @@ app.get(
           params
         );
 
-
       const total =
         count.rows[0].count;
-
 
       const pg =
         pagination(
           req,
           total
         );
-
 
       const data =
         await query(
@@ -1137,7 +1289,6 @@ app.get(
           ]
         );
 
-
       res.json({
         data: data.rows,
 
@@ -1148,7 +1299,6 @@ app.get(
           pages: pg.pages
         }
       });
-
 
     } catch (e) {
 
@@ -1171,6 +1321,7 @@ app.get(
   "/api/powers/last-file",
   auth,
   async (req, res) => {
+
     try {
 
       const r =
@@ -1196,19 +1347,15 @@ app.get(
           FROM powers
         `);
 
-
       const last =
         Number(
           r.rows[0].last || 2431
         );
 
-
       res.json({
         last,
-        next:
-          last + 1
+        next: last + 1
       });
-
 
     } catch (e) {
 
@@ -1231,6 +1378,7 @@ app.post(
   "/api/powers",
   auth,
   async (req, res) => {
+
     try {
 
       const fileNumber =
@@ -1238,29 +1386,20 @@ app.post(
           req.body.file_number ?? ""
         ).trim();
 
-
       const clientName =
         String(
           req.body.client_name ?? ""
         ).trim();
-
 
       const powerNumber =
         String(
           req.body.power_number ?? ""
         ).trim();
 
-
       const documentationAuthority =
         String(
           req.body.documentation_authority ?? ""
         ).trim();
-
-
-      /*
-        الإضافة اليدوية فقط تمنع تكرار رقم التوكيل.
-        الاستيراد لا يستخدم هذا الشرط.
-      */
 
       if (powerNumber) {
 
@@ -1278,7 +1417,6 @@ app.post(
             [powerNumber]
           );
 
-
         if (duplicate.rowCount) {
 
           return res.status(409).json({
@@ -1287,7 +1425,6 @@ app.post(
           });
         }
       }
-
 
       const r =
         await query(
@@ -1316,11 +1453,9 @@ app.post(
           ]
         );
 
-
       res.status(201).json(
         r.rows[0]
       );
-
 
     } catch (e) {
 
@@ -1343,35 +1478,31 @@ app.put(
   "/api/powers/:id",
   auth,
   async (req, res) => {
+
     try {
 
       const id =
         Number(req.params.id);
-
 
       const fileNumber =
         String(
           req.body.file_number ?? ""
         ).trim();
 
-
       const clientName =
         String(
           req.body.client_name ?? ""
         ).trim();
-
 
       const powerNumber =
         String(
           req.body.power_number ?? ""
         ).trim();
 
-
       const documentationAuthority =
         String(
           req.body.documentation_authority ?? ""
         ).trim();
-
 
       if (powerNumber) {
 
@@ -1393,7 +1524,6 @@ app.put(
             ]
           );
 
-
         if (duplicate.rowCount) {
 
           return res.status(409).json({
@@ -1402,7 +1532,6 @@ app.put(
           });
         }
       }
-
 
       const r =
         await query(
@@ -1433,7 +1562,6 @@ app.put(
           ]
         );
 
-
       if (!r.rowCount) {
 
         return res.status(404).json({
@@ -1442,11 +1570,9 @@ app.put(
         });
       }
 
-
       res.json(
         r.rows[0]
       );
-
 
     } catch (e) {
 
@@ -1469,6 +1595,7 @@ app.delete(
   "/api/powers/:id",
   auth,
   async (req, res) => {
+
     try {
 
       const r =
@@ -1481,7 +1608,6 @@ app.delete(
           ]
         );
 
-
       if (!r.rowCount) {
 
         return res.status(404).json({
@@ -1490,11 +1616,9 @@ app.delete(
         });
       }
 
-
       res.json({
         success: true
       });
-
 
     } catch (e) {
 
@@ -1511,8 +1635,11 @@ app.delete(
 
 /* =====================================================
    IMPORT POWERS
-   يستورد كل الصفوف
-   ويستورد جهة التوثيق
+   Excel:
+   م
+   اسم الموكل
+   رقم التوكيل
+   جهة إصدار
 ===================================================== */
 
 app.post(
@@ -1531,7 +1658,6 @@ app.post(
         });
       }
 
-
       const workbook =
         XLSX.read(
           req.file.buffer,
@@ -1541,7 +1667,6 @@ app.post(
           }
         );
 
-
       if (!workbook.SheetNames.length) {
 
         return res.status(400).json({
@@ -1550,16 +1675,13 @@ app.post(
         });
       }
 
-
       const sheet =
         workbook.Sheets[
           workbook.SheetNames[0]
         ];
 
-
       /*
-        raw:false
-        للحفاظ على القيم الظاهرة في Excel.
+        قراءة Excel بالقيم الظاهرة
       */
 
       const rows =
@@ -1571,34 +1693,33 @@ app.post(
           }
         );
 
+      console.log(
+        "================================================="
+      );
+
+      console.log(
+        "IMPORT POWERS START"
+      );
+
+      console.log(
+        "SHEET:",
+        workbook.SheetNames[0]
+      );
+
+      console.log(
+        "ROWS:",
+        rows.length
+      );
 
       let inserted = 0;
 
+      for (let i = 0; i < rows.length; i++) {
 
-      /*
-        =================================================
-        مهم جدًا
-        =================================================
-
-        هنا تم حذف كل الآتي:
-
-        ❌ duplicate check
-        ❌ importedPowerNumbers
-        ❌ SELECT duplicate
-        ❌ incomplete skip
-        ❌ skipped
-        ❌ continue
-
-        وبالتالي:
-        كل صف في Excel يدخل قاعدة البيانات.
-      */
-
-
-      for (const raw of rows) {
+        const raw =
+          rows[i];
 
         const row =
           normalizeRow(raw);
-
 
         /*
           استخراج البيانات
@@ -1607,27 +1728,24 @@ app.post(
         const fileNumber =
           caseFile(row);
 
-
         const clientName =
           client(row);
-
 
         const powerNum =
           powerNumber(row);
 
-
-        /*
-          استخراج جهة التوثيق
-          مهما كان اسم العمود من الأسماء المدعومة.
-        */
-
         const authName =
           authority(row);
 
+        /*
+          LOG مهم جدًا لمعرفة ماذا قرأ Excel
+        */
 
         console.log(
-          "IMPORT POWER:",
+          `IMPORT POWER ROW ${i + 2}:`,
           {
+            original: raw,
+            normalized: row,
             fileNumber,
             clientName,
             powerNum,
@@ -1635,9 +1753,11 @@ app.post(
           }
         );
 
-
         /*
-          لا يوجد أي شرط يمنع الإدخال.
+          كل صف يدخل بدون:
+          duplicate check
+          skip
+          incomplete skip
         */
 
         await query(
@@ -1658,29 +1778,29 @@ app.post(
           ]
         );
 
-
         inserted++;
       }
 
+      console.log(
+        "IMPORT POWERS FINISHED:",
+        {
+          total: rows.length,
+          inserted
+        }
+      );
+
+      console.log(
+        "================================================="
+      );
 
       res.json({
         success: true,
-
-        total:
-          rows.length,
-
+        total: rows.length,
         inserted,
-
-        skipped:
-          0,
-
-        duplicate:
-          0,
-
-        incomplete:
-          0
+        skipped: 0,
+        duplicate: 0,
+        incomplete: 0
       });
-
 
     } catch (e) {
 
@@ -1689,11 +1809,9 @@ app.post(
         e
       );
 
-
       res.status(500).json({
         message:
           "حدث خطأ أثناء استيراد التوكيلات",
-
         error:
           e.message
       });
@@ -1710,13 +1828,13 @@ app.get(
   "/api/search",
   auth,
   async (req, res) => {
+
     try {
 
       const q =
         String(
           req.query.q || ""
         ).trim();
-
 
       if (!q) {
 
@@ -1726,10 +1844,8 @@ app.get(
         });
       }
 
-
       const normalized =
         normalizeText(q);
-
 
       if (!normalized) {
 
@@ -1746,7 +1862,6 @@ app.get(
 
       const caseParams = [];
 
-
       const caseSearch =
         buildSmartSearch(
           normalized,
@@ -1756,7 +1871,6 @@ app.get(
           ],
           caseParams
         );
-
 
       const cases =
         await query(
@@ -1781,7 +1895,6 @@ app.get(
 
       const powerParams = [];
 
-
       const powerSearch =
         buildSmartSearch(
           normalized,
@@ -1793,7 +1906,6 @@ app.get(
           ],
           powerParams
         );
-
 
       const powers =
         await query(
@@ -1813,11 +1925,9 @@ app.get(
           powerParams
         );
 
-
       res.json({
 
-        query:
-          q,
+        query: q,
 
         normalized,
 
@@ -1828,7 +1938,6 @@ app.get(
           powers.rows
 
       });
-
 
     } catch (e) {
 
@@ -1844,19 +1953,20 @@ app.get(
 
 
 /* =====================================================
-   CLEAR OLD DATA
+   CLEAR ALL DATA
+   cases + powers
 ===================================================== */
 
 app.delete(
   "/api/data/clear",
   auth,
   async (req, res) => {
+
     try {
 
       await query(
         "TRUNCATE TABLE cases, powers RESTART IDENTITY"
       );
-
 
       res.json({
         success: true,
@@ -1864,7 +1974,6 @@ app.delete(
         message:
           "تم حذف جميع ملفات الحفظ والتوكيلات"
       });
-
 
     } catch (e) {
 
@@ -1881,12 +1990,15 @@ app.delete(
 
 /* =====================================================
    CLEAR POWERS ONLY
+   مهم:
+   لا يلمس cases نهائيًا
 ===================================================== */
 
 app.delete(
   "/api/data/clear-powers",
   auth,
   async (req, res) => {
+
     try {
 
       await query(
@@ -1895,6 +2007,7 @@ app.delete(
 
       res.json({
         success: true,
+
         message:
           "تم حذف جميع ملفات التوكيلات فقط بنجاح"
       });
@@ -1908,11 +2021,15 @@ app.delete(
 
       res.status(500).json({
         message:
-          "تعذر حذف ملفات التوكيلات"
+          "تعذر حذف ملفات التوكيلات",
+
+        error:
+          e.message
       });
     }
   }
 );
+
 
 /* =====================================================
    HEALTH
@@ -1928,20 +2045,16 @@ app.get(
         "SELECT 1"
       );
 
-
       res.json({
         ok: true,
-
         database:
           "connected"
       });
-
 
     } catch {
 
       res.status(503).json({
         ok: false,
-
         database:
           "disconnected"
       });
@@ -1960,6 +2073,10 @@ app.use(
   )
 );
 
+
+/* =====================================================
+   SPA FALLBACK
+===================================================== */
 
 app.get(
   /.*/,
@@ -1987,7 +2104,6 @@ app.get(
 
     await ensureAdmin();
 
-
     app.listen(
       PORT,
       () => {
@@ -2005,7 +2121,6 @@ app.get(
         );
       }
     );
-
 
   } catch (e) {
 
