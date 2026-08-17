@@ -1880,6 +1880,41 @@ app.delete(
 
 
 /* =====================================================
+   CLEAR POWERS ONLY
+===================================================== */
+
+app.delete(
+  "/api/data/clear-powers",
+  auth,
+  async (req, res) => {
+    try {
+
+      await query(
+        "TRUNCATE TABLE powers RESTART IDENTITY"
+      );
+
+      res.json({
+        success: true,
+        message:
+          "تم حذف جميع ملفات التوكيلات فقط بنجاح"
+      });
+
+    } catch (e) {
+
+      console.error(
+        "CLEAR POWERS ERROR:",
+        e
+      );
+
+      res.status(500).json({
+        message:
+          "تعذر حذف ملفات التوكيلات"
+      });
+    }
+  }
+);
+
+/* =====================================================
    HEALTH
 ===================================================== */
 
